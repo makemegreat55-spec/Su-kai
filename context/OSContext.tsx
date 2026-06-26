@@ -1373,16 +1373,28 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }).catch(() => {});
       };
 
+      const characterStatusSyncHandler = (e: Event) => {
+          const detail = (e as CustomEvent).detail as { charId?: string; chatStatus?: CharacterProfile['chatStatus'] };
+          const charId = detail?.charId;
+          const chatStatus = detail?.chatStatus;
+          if (!charId || !chatStatus) return;
+          setCharacters(prev => prev.map(c => c.id === charId
+              ? normalizeCharacterImpression({ ...c, chatStatus })
+              : c));
+      };
+
       window.addEventListener('active-msg-received', handler);
       window.addEventListener('active-msg-progress', progressHandler);
       window.addEventListener('active-msg-open', openHandler);
       window.addEventListener('emotion-updated', buffSyncHandler);
+      window.addEventListener('character-status-updated', characterStatusSyncHandler);
       document.addEventListener('visibilitychange', onVisible);
       return () => {
           window.removeEventListener('active-msg-received', handler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);
           window.removeEventListener('emotion-updated', buffSyncHandler);
+          window.removeEventListener('character-status-updated', characterStatusSyncHandler);
           document.removeEventListener('visibilitychange', onVisible);
       };
   }, [sendProactiveNativeNotification]);

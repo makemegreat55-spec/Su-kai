@@ -239,19 +239,22 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
           ? 'text-[#fff7ed] hover:bg-[#f8f0e0]/20 rounded-[4px] border-2 border-[#8f674a] bg-[#f8f0e0]/10'
           : 'text-indigo-500 hover:bg-indigo-50 rounded-full';
 
+    const yuanKaiStatusText = activeCharacter.chatStatus?.text?.trim();
+    const onlineStatusText = yuanKaiStatusText || 'online';
+    const statusDotClass = activeCharacter.chatStatus?.isBusy ? 'bg-amber-400' : 'bg-emerald-400';
     const onlineStatusNode = headerStyle === 'telegram'
         ? null
         : statusStyle === 'pill' ? (
             <div className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${isDarkHeader ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/20' : isPixelHeader ? 'bg-[#fff7ed] text-[#8f674a] border-[#8f674a]/25' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
-                online
+                {onlineStatusText}
             </div>
         ) : statusStyle === 'dot' ? (
             <div className={`flex items-center gap-1 text-[10px] ${secondaryTextClass}`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>Online</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+                <span>{onlineStatusText}</span>
             </div>
         ) : (
-            <div className={`text-[10px] uppercase ${secondaryTextClass}`}>Online</div>
+            <div className={`text-[10px] ${yuanKaiStatusText ? '' : 'uppercase'} ${secondaryTextClass}`}>{onlineStatusText}</div>
         );
 
     const renderBuffRow = (centered: boolean) => {

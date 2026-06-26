@@ -1199,6 +1199,10 @@ export const useChatAI = ({
                     // 整组 musicHooks 由 MusicProvider 注册到模块级 slot, 本地 fetch 路径和
                     // instant push 路径 (activeMsgRuntime) 共享同一份, 见 MusicContext.loadMusicHooks.
                     musicHooks: loadMusicHooks() ?? undefined,
+                    onCharacterStatusUpdate: updateCharacter
+                        ? (_charId, chatStatus) => updateCharacter(char.id, { chatStatus })
+                        : undefined,
+                    onYuanKaiThoughtUpdate: (_charId, innerState) => setEvolvedNarrative(innerState),
                 },
                 // Phase 0: 本地 fetch 路径保持原逻辑, 不跳 2nd-pass LLM, 也没有结构化 directives。
                 skipSecondPassLLM: false,

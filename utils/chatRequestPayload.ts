@@ -23,6 +23,7 @@ import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './lu
 import type { LuckinMiniAppSnapshot, LuckinChatState } from './luckinToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
+import { adaptSuKaiPromptContext, YuanKaiPromptBuilder } from './yuanKaiPrompt';
 
 export interface UserListeningContext {
     songName: string;
@@ -294,7 +295,21 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         }
     }
 
-    // ── 10. 组装 fullMessages + 末尾双语 reminder ─────────
+    // ── 10. YuanKai prompt layer: 只替换最终 system prompt 生成层 ─────────
+    // legacySystemPrompt 是 Su-kai 现有角色/世界书/记忆/工具素材的唯一来源；
+    // builder 只重排层级与输出规约，不再额外调用 ChatPrompts，避免双重注入。
+    systemPrompt = YuanKaiPromptBuilder.build(adaptSuKaiPromptContext({
+        char,
+        userProfile,
+        legacySystemPrompt: systemPrompt,
+        contextLimit,
+        historyMessageCount: historyMsgs.length,
+        apiHistoryMessageCount: cleanedApiMessages.length,
+        emojiNames: emojis.map(e => e.name).filter(Boolean),
+        flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, htmlActive, thinkingActive },
+    }));
+
+    // ── 11. 组装 fullMessages + 末尾双语 reminder ─────────
     const fullMessages: Array<{ role: string; content: any }> = [
         { role: 'system', content: systemPrompt },
         ...cleanedApiMessages,

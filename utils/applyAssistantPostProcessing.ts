@@ -46,6 +46,11 @@ import {
     runXhsMyProfile,
     runXhsDetail,
 } from './agenticTools';
+import {
+    extractYuanKaiStatusUpdate,
+    extractYuanKaiThoughtUpdate,
+    normalizeYuanKaiSpecialOutputForDisplay,
+} from './yuanKaiPrompt';
 
 // ─── 模块内辅助 ──────────────────────────────────────────────────────────────
 
@@ -242,6 +247,16 @@ export interface PostProcessMusicHooks {
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
 }
 
+export interface PostProcessIllustrationHookPayload {
+    stage: 'after-normalize-before-tools';
+    char: CharacterProfile;
+    userProfile: UserProfile;
+    rawContent: string;
+    normalizedContent: string;
+    contextMsgs: Message[];
+    fullMessages: any[];
+}
+
 export interface PostProcessHooks {
     setMessages: (msgs: Message[]) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
@@ -253,6 +268,15 @@ export interface PostProcessHooks {
     updateTokenUsage?: (data: any, msgCount: number, pass: string) => void;
     /** 给 ChatParser.parseAndExecuteActions 用的音乐钩子 */
     musicHooks?: PostProcessMusicHooks;
+    /** future: IllustrationDetector can observe a normalized assistant reply before tools mutate it. */
+    illustrationDetector?: (payload: PostProcessIllustrationHookPayload) => void | Promise<void>;
+    /** Applies yuan-kai status tags to the character profile when the foreground chat owns state. */
+    onCharacterStatusUpdate?: (
+        charId: string,
+        chatStatus: NonNullable<CharacterProfile['chatStatus']>,
+    ) => void | Promise<void>;
+    /** Applies the hidden yuan-kai thought to the same inner-state slot used by emotion eval. */
+    onYuanKaiThoughtUpdate?: (charId: string, innerState: string) => void | Promise<void>;
 }
 
 export interface PostProcessCtx {
@@ -342,6 +366,9 @@ export async function applyAssistantPostProcessing(
         setXhsStatus = () => {},
         updateTokenUsage = () => {},
         musicHooks,
+        illustrationDetector,
+        onCharacterStatusUpdate,
+        onYuanKaiThoughtUpdate,
     } = hooks;
     const {
         xsecTokenCache: xsecTokenCacheRef,
@@ -411,6 +438,63 @@ export async function applyAssistantPostProcessing(
     // ─── Step 1: 初次粗洗 ───
     let aiContent = replayedTagPrefix ? `${replayedTagPrefix}${rawAiContent}` : rawAiContent;
     aiContent = normalizeAiContent(aiContent);
+    const thoughtExtraction = extractYuanKaiThoughtUpdate(aiContent);
+    aiContent = thoughtExtraction.content;
+    if (thoughtExtraction.thought) {
+        const innerState = thoughtExtraction.thought.thoughtText;
+        try {
+            if (onYuanKaiThoughtUpdate) {
+                await onYuanKaiThoughtUpdate(char.id, innerState);
+            }
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('emotion-innerstate-updated', {
+                    detail: { charId: char.id, innerState, source: 'yuan-kai-thought' },
+                }));
+            }
+        } catch (e) {
+            console.warn('[yuan-kai-thought] failed to apply hidden thought; continuing chat post-processing', e);
+        }
+    }
+    const statusExtraction = extractYuanKaiStatusUpdate(aiContent);
+    aiContent = statusExtraction.content;
+    if (statusExtraction.status) {
+        const chatStatus = {
+            text: statusExtraction.status.statusText,
+            isBusy: statusExtraction.status.isBusy,
+            updatedAt: statusExtraction.status.updatedAt,
+            source: 'yuan-kai' as const,
+        };
+        try {
+            if (onCharacterStatusUpdate) {
+                await onCharacterStatusUpdate(char.id, chatStatus);
+            } else {
+                await DB.saveCharacter({ ...char, chatStatus });
+            }
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('character-status-updated', {
+                    detail: { charId: char.id, chatStatus },
+                }));
+            }
+        } catch (e) {
+            console.warn('[yuan-kai-status] failed to apply status update; continuing chat post-processing', e);
+        }
+    }
+    aiContent = normalizeYuanKaiSpecialOutputForDisplay(aiContent);
+    if (illustrationDetector) {
+        try {
+            await illustrationDetector({
+                stage: 'after-normalize-before-tools',
+                char,
+                userProfile,
+                rawContent: rawAiContent,
+                normalizedContent: aiContent,
+                contextMsgs,
+                fullMessages,
+            });
+        } catch (e) {
+            console.warn('[illustration-detector] hook failed; continuing chat post-processing', e);
+        }
+    }
 
     // ── 渲染基础设施 (提前声明, 供"执行功能前先展示本轮正文 A" + 末尾展示二轮结果 B 复用) ──
     // 引用/回复标签的匹配 + 清理正则 (提前声明避免 lead-in 渲染时落入 TDZ)。

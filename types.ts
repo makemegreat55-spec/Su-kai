@@ -1715,6 +1715,14 @@ export interface CharacterProfile {
   // （注意：历史消息本身仍带时间戳，关掉后弱化程度取决于模型自身理解）。
   timeAwarenessEnabled?: boolean;
 
+  /** 聊天顶栏状态。可由 yuan-kai prompt layer 的 [[YUAN_KAI_STATUS: ...]] 更新。 */
+  chatStatus?: {
+      text: string;
+      isBusy?: boolean;
+      updatedAt: number;
+      source?: 'yuan-kai' | 'manual';
+  };
+
   // Chat & Date voice TTS settings
   chatVoiceEnabled?: boolean;
   chatVoiceLang?: string;
