@@ -239,8 +239,12 @@ export const PERSONALITY_WEIGHTS: Record<PersonalityStyle, Record<LinkType, numb
 
 // ─── Embedding 配置（独立于聊天 API） ─────────────────
 
+export type EmbeddingProvider = 'openai-compatible' | 'openrouter' | 'custom';
+
 export interface EmbeddingConfig {
+    provider?: EmbeddingProvider; // 未设置 = 旧版 OpenAI 兼容端点
     baseUrl: string;            // OpenAI 兼容端点，如 https://api.siliconflow.cn/v1
+    modelsUrl?: string;         // 可选：模型列表端点（OpenRouter = /embeddings/models）
     apiKey: string;
     model: string;              // 默认 text-embedding-3-small
     dimensions: number;         // 默认 1024

@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getEmbeddings } from './embedding';
 import type { EmbeddingConfig } from './types';
+import {
+    getEmbeddingUrl,
+    normalizeApiKey,
+    normalizeEmbeddingConfig,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_EMBEDDING_MODEL,
+} from './providerConfig';
 
 // 这组测试守护「分批 / 并行不破坏结果」这条契约：
 //   1. 无论多少条文本，返回的向量条数 = 输入条数，且顺序严格对应下标
@@ -83,5 +90,61 @@ describe('getEmbeddings 分批 / 并行保序', () => {
         out.forEach((v, i) => expect(v[0]).toBe(i));
         expect(batchSizes.reduce((a, b) => a + b, 0)).toBe(100); // 不多不少
         batchSizes.forEach(n => expect(n).toBeLessThanOrEqual(10));
+    });
+});
+
+describe('Embedding provider config', () => {
+    it('OpenRouter URL 正规化到 /api/v1/embeddings', () => {
+        const normalized = normalizeEmbeddingConfig({
+            provider: 'openrouter',
+            baseUrl: 'https://openrouter.ai',
+            apiKey: 'Bearer sk-test',
+            model: OPENROUTER_EMBEDDING_MODEL,
+            dimensions: 1024,
+        });
+        expect(normalized.baseUrl).toBe(OPENROUTER_BASE_URL);
+        expect(getEmbeddingUrl(normalized)).toBe('https://openrouter.ai/api/v1/embeddings');
+    });
+
+    it('API Key 接受 Authorization/Bearer 粘贴格式并剥离', () => {
+        expect(normalizeApiKey('Bearer sk-test')).toBe('sk-test');
+        expect(normalizeApiKey('Authorization: Bearer sk-test')).toBe('sk-test');
+    });
+
+    it('OpenRouter 请求使用正规化 URL 与 key，并验证向量 shape', async () => {
+        global.fetch = vi.fn(async (url: any, init: any) => {
+            const body = JSON.parse(init.body as string);
+            expect(url).toBe('https://openrouter.ai/api/v1/embeddings');
+            expect(init.headers.Authorization).toBe('Bearer sk-or');
+            expect(body.model).toBe(OPENROUTER_EMBEDDING_MODEL);
+            expect(body.dimensions).toBe(1024);
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
+                }),
+            } as any;
+        }) as any;
+
+        const out = await getEmbeddings(['测试'], {
+            provider: 'openrouter',
+            baseUrl: 'openrouter.ai',
+            apiKey: 'Authorization: Bearer sk-or',
+            model: OPENROUTER_EMBEDDING_MODEL,
+            dimensions: 1024,
+        });
+        expect(out[0]).toBeInstanceOf(Float32Array);
+        expect(Array.from(out[0])).toEqual(expect.arrayContaining([expect.any(Number)]));
+    });
+
+    it('成功 HTTP 但缺少 embedding 向量时仍失败', async () => {
+        global.fetch = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: [{ index: 0, embedding: 'bad-shape' }] }),
+        })) as any;
+
+        await expect(getEmbeddings(['x'], config)).rejects.toThrow(/invalid vector shape/i);
     });
 });

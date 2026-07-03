@@ -29,9 +29,9 @@ import {
     formatDiagnostics,
     type InstantPushPayload,
 } from '../utils/instantPushClient';
-import { applyAssistantPostProcessing, type XhsCaches } from '../utils/applyAssistantPostProcessing';
+import { applyAssistantPostProcessing, type PostProcessHooks, type XhsCaches } from '../utils/applyAssistantPostProcessing';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
-import { applyEmotionEvalRaw } from '../utils/emotionApply';
+import { applyEmotionEvalRaw, getLastInnerState } from '../utils/emotionApply';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 
 // ─── 情绪评估（副API，fire & forget）───
@@ -347,6 +347,8 @@ interface UseChatAIProps {
     luckinMiniAppRef?: MutableRefObject<import('../utils/luckinToolBridge').LuckinMiniAppSnapshot | undefined>;
     /** 瑞幸聊天点单模式 (点"瑞一杯"激活): 角色直接调真实 8 工具 + 注入定位/提示词 */
     luckinChatRef?: MutableRefObject<import('../utils/luckinToolBridge').LuckinChatState | undefined>;
+    /** Optional background hook for yuan-kai style auto illustration generation. */
+    illustrationDetector?: PostProcessHooks['illustrationDetector'];
 }
 
 export const useChatAI = ({
@@ -366,6 +368,7 @@ export const useChatAI = ({
     mcdMiniAppRef,
     luckinMiniAppRef,
     luckinChatRef,
+    illustrationDetector,
 }: UseChatAIProps) => {
     
     // 音乐上下文 — 用于聊天时注入"user 正在听什么 + 当前歌词窗口"
@@ -412,9 +415,9 @@ export const useChatAI = ({
     // instant 情绪评估的 "情绪更新中" 徽章安全超时句柄 (worker 推回 emotion_update 前别一直转).
     const instantEmotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // 切换角色时重置
+    // 切换角色时读取上一轮状态；YUAN_KAI_THOUGHT 和 emotion eval 共用这份轻量缓存
     useEffect(() => {
-        setEvolvedNarrative('');
+        setEvolvedNarrative(char?.id ? getLastInnerState(char.id) : '');
     }, [char?.id]);
 
     // ─── Post-push emotion eval (Option B: online/offline split) ───────────────
@@ -1196,6 +1199,7 @@ export const useChatAI = ({
                     setDiaryStatus,
                     setXhsStatus,
                     updateTokenUsage,
+                    illustrationDetector,
                     // 整组 musicHooks 由 MusicProvider 注册到模块级 slot, 本地 fetch 路径和
                     // instant push 路径 (activeMsgRuntime) 共享同一份, 见 MusicContext.loadMusicHooks.
                     musicHooks: loadMusicHooks() ?? undefined,

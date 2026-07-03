@@ -1,7 +1,7 @@
 /**
  * Memory Palace — Rerank（cross-encoder 二次排序）
  *
- * 通用 /rerank 协议，兼容 SiliconFlow / Jina / Cohere / Voyage：
+ * 通用 /rerank 协议，兼容 SiliconFlow / Jina / Cohere / Voyage / OpenRouter：
  *   POST {baseUrl}/rerank
  *   {
  *     "model": "BAAI/bge-reranker-v2-m3",
@@ -20,12 +20,23 @@
  * 再跑一次 hybridSearch 作为 rerank 输入池（这一轮 user 发言对应的语义空间）。
  */
 
-import { safeFetchJson } from '../safeApi';
+import type { EmbeddingProvider } from './types';
+import { fetchProviderJson } from './providerFetch';
+import {
+    getRerankUrl,
+    inferEmbeddingProvider,
+    normalizeApiKey,
+    OPENROUTER_RERANK_MODEL,
+    OPENROUTER_RERANK_MODELS,
+    type ProviderModelOption,
+} from './providerConfig';
 
 export interface RerankApiConfig {
+    provider?: EmbeddingProvider;
     baseUrl: string;
     apiKey: string;
     model: string;
+    modelsUrl?: string;
 }
 
 export interface RerankResult {
@@ -51,28 +62,31 @@ export async function rerankDocuments(
 ): Promise<RerankResult[]> {
     if (documents.length === 0 || !query.trim()) return [];
 
-    const url = `${config.baseUrl.replace(/\/+$/, '')}/rerank`;
-    const body = {
-        model: config.model,
+    const provider = inferEmbeddingProvider(config.provider, config.baseUrl, config.modelsUrl);
+    const normalized: RerankApiConfig = {
+        ...config,
+        provider,
+        apiKey: normalizeApiKey(config.apiKey),
+        model: config.model?.trim() || (provider === 'openrouter' ? OPENROUTER_RERANK_MODEL : 'BAAI/bge-reranker-v2-m3'),
+    };
+    const url = getRerankUrl(normalized);
+    const body: Record<string, unknown> = {
+        model: normalized.model,
         query,
         documents,
         top_n: Math.min(topN, documents.length),
-        return_documents: false,
     };
+    if (normalized.provider !== 'openrouter') body.return_documents = false;
 
-    const data = await safeFetchJson(
+    const data = await fetchProviderJson({
         url,
-        {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.apiKey}`,
-            },
-            body: JSON.stringify(body),
-        },
-        1,      // 失败只多试 1 次，rerank 卡住就降级
-        30_000, // 30s 硬超时
-    );
+        apiKey: normalized.apiKey,
+        label: 'Rerank',
+        config: normalized,
+        method: 'POST',
+        bodyText: JSON.stringify(body),
+        retries: 1,
+    });
 
     // 兼容两种返回形态：
     //   - Cohere/SiliconFlow/Jina 新版: { results: [{index, relevance_score}] }
@@ -89,4 +103,31 @@ export async function rerankDocuments(
                           : typeof r.score === 'number'            ? r.score
                           : 0,
         }));
+}
+
+export async function fetchRerankModels(config: RerankApiConfig): Promise<{
+    provider: EmbeddingProvider | undefined;
+    url: string;
+    models: ProviderModelOption[];
+    builtin: boolean;
+}> {
+    const provider = inferEmbeddingProvider(config.provider, config.baseUrl, config.modelsUrl);
+    if (provider === 'openrouter') {
+        return {
+            provider: 'openrouter',
+            url: getRerankUrl({ provider: 'openrouter', baseUrl: config.baseUrl }),
+            models: OPENROUTER_RERANK_MODELS,
+            builtin: true,
+        };
+    }
+    return {
+        provider,
+        url: getRerankUrl(config),
+        models: [
+            { id: 'BAAI/bge-reranker-v2-m3', name: 'BGE Reranker v2 M3', modality: 'rerank' },
+            { id: 'Pro/BAAI/bge-reranker-v2-m3', name: 'BGE Reranker v2 M3 Pro', modality: 'rerank' },
+            { id: 'netease-youdao/bce-reranker-base_v1', name: 'BCE Reranker Base', modality: 'rerank' },
+        ],
+        builtin: true,
+    };
 }

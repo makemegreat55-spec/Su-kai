@@ -2627,6 +2627,49 @@ export default {
       return jsonResponse({ error: "Unknown XHS endpoint. Use /xhs/profile, /xhs/upload-test, /xhs/search, /xhs/feed, /xhs/publish, /xhs/comment" }, { status: 404, origin });
     }
 
+    // ========== NovelAI 代理 (チャット自動挿絵用, CORS 兜底) ==========
+    // 前端把 Authorization: Bearer <NovelAI Key> 透传过来。Worker 不读不存 token,
+    // 只允许固定 NovelAI 图片 endpoint，避免任意 URL 代理。
+    if (url.pathname === '/novelai/generate-image') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const auth = request.headers.get('Authorization');
+      if (!auth) {
+        return jsonResponse({ error: 'Missing Authorization header (NovelAI key)' }, { status: 401, origin });
+      }
+      let bodyObj;
+      try {
+        bodyObj = await request.json();
+      } catch {
+        return jsonResponse({ error: 'Invalid JSON body' }, { status: 400, origin });
+      }
+      const requestBody = bodyObj && typeof bodyObj.body === 'object' ? bodyObj.body : bodyObj;
+      const model = typeof requestBody?.model === 'string' ? requestBody.model : '';
+      const apiUrl = model.includes('nai-diffusion-4')
+        ? 'https://image.novelai.net/ai/generate-image-stream'
+        : 'https://image.novelai.net/ai/generate-image';
+      try {
+        const upstream = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': auth,
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'User-Agent': 'sully-novelai-proxy',
+          },
+          body: JSON.stringify(requestBody),
+        });
+        const respHeaders = new Headers(corsHeaders(origin));
+        respHeaders.set('Cache-Control', 'no-store');
+        const ct = upstream.headers.get('Content-Type');
+        if (ct) respHeaders.set('Content-Type', ct);
+        return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+      } catch (e) {
+        return jsonResponse({ error: 'NovelAI upstream fetch failed' }, { status: 502, origin });
+      }
+    }
+
     // ========== Replicate 代理 (写歌 App 用，给 ACE-Step 等模型走) ==========
     // 前端把 Authorization: Bearer r8_xxx 透传过来，Worker 只做路由 + CORS + CDN 兜底。
     //   POST /replicate/predictions          → 起任务 (透传 body 到 api.replicate.com)

@@ -307,6 +307,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         apiHistoryMessageCount: cleanedApiMessages.length,
         emojiNames: emojis.map(e => e.name).filter(Boolean),
         flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, htmlActive, thinkingActive },
+        innerState: innerState || undefined,
     }));
 
     // ── 11. 组装 fullMessages + 末尾双语 reminder ─────────

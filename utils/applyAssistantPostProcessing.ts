@@ -51,6 +51,7 @@ import {
     extractYuanKaiThoughtUpdate,
     normalizeYuanKaiSpecialOutputForDisplay,
 } from './yuanKaiPrompt';
+import { setLastInnerState } from './emotionApply';
 
 // ─── 模块内辅助 ──────────────────────────────────────────────────────────────
 
@@ -443,6 +444,7 @@ export async function applyAssistantPostProcessing(
     if (thoughtExtraction.thought) {
         const innerState = thoughtExtraction.thought.thoughtText;
         try {
+            setLastInnerState(char.id, innerState);
             if (onYuanKaiThoughtUpdate) {
                 await onYuanKaiThoughtUpdate(char.id, innerState);
             }

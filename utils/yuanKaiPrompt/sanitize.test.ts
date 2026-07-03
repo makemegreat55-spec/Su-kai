@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     extractYuanKaiStatusUpdate,
     extractYuanKaiThoughtUpdate,
+    extractYuanKaiIllustrationHint,
     normalizeYuanKaiSpecialOutputForDisplay,
     sanitizeYuanKaiHiddenTagsForDisplay,
 } from '.';
@@ -52,7 +53,34 @@ describe('yuan-kai prompt sanitize helpers', () => {
         expect(normalizeYuanKaiSpecialOutputForDisplay(input)).toBe('表示する返事');
     });
 
-    it('handles thought then visible message then status in the requested order', () => {
+    it('handles visible message then optional status and thought in the requested order', () => {
+        const input = [
+            '表示する返事',
+            '[[YUAN_KAI_ILLUSTRATION: {"trigger":true,"intent":"visual_moment","title":"窓辺","momentText":"窓辺でスマホを握りしめて少し笑った","sourceText":"窓辺でスマホを握りしめて少し笑った","imagePrompt":"one character by a rainy window holding a phone","importance":90,"subject":"one character","expression":"small smile","pose":"holding a phone","clothing":"casual cardigan","scene":"rainy bedroom window","camera":"upper body","mood":"gentle"}]]',
+            '[[YUAN_KAI_STATUS: {"type":"update_status","status_text":"少し考えごと","is_busy":false}]]',
+            '[[YUAN_KAI_THOUGHT: 今日は説明より、短く隣にいる感じを残した方がよさそうだと思った。]]',
+        ].join('\n');
+
+        const illustrationResult = extractYuanKaiIllustrationHint(input);
+        expect((illustrationResult.illustration?.rawHint as any)?.title).toBe('窓辺');
+        const statusResult = extractYuanKaiStatusUpdate(input);
+        const thoughtResult = extractYuanKaiThoughtUpdate(statusResult.content);
+
+        expect(statusResult.status?.statusText).toBe('少し考えごと');
+        expect(statusResult.status?.isBusy).toBe(false);
+        expect(thoughtResult.thought?.thoughtText).toBe('今日は説明より、短く隣にいる感じを残した方がよさそうだと思った。');
+        expect(normalizeYuanKaiSpecialOutputForDisplay(input)).toBe('表示する返事');
+    });
+
+    it('strips malformed illustration tags from visible text', () => {
+        const input = '表示\n[[YUAN_KAI_ILLUSTRATION: {not-json}]]';
+        const result = extractYuanKaiIllustrationHint(input);
+        expect(result.content).toBe('表示');
+        expect(result.illustration).toBeNull();
+        expect(normalizeYuanKaiSpecialOutputForDisplay(input)).toBe('表示');
+    });
+
+    it('keeps extraction order-agnostic for older thought-first outputs', () => {
         const input = [
             '[[YUAN_KAI_THOUGHT: いまの内心を一文]]',
             '表示する返事',

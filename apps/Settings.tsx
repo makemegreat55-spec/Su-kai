@@ -20,6 +20,19 @@ import { PushVapidSettingsModal } from '../components/settings/PushVapidSettings
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
+import {
+  DEFAULT_NOVEL_AI_CFG_SCALE,
+  DEFAULT_NOVEL_AI_MODEL,
+  DEFAULT_NOVEL_AI_NEGATIVE_PROMPT,
+  DEFAULT_NOVEL_AI_POSITIVE_PROMPT,
+  DEFAULT_NOVEL_AI_RESOLUTION,
+  DEFAULT_NOVEL_AI_SAMPLER,
+  DEFAULT_NOVEL_AI_SEED,
+  DEFAULT_NOVEL_AI_STEPS,
+  DEFAULT_NOVEL_AI_UC_PRESET,
+  generateNovelAiImage,
+  stripBearerPrefix,
+} from '../utils/autoIllustration';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -80,6 +93,23 @@ const Settings: React.FC = () => {
     apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic'
   );
   const [localAceStepKey, setLocalAceStepKey] = useState(apiConfig.aceStepApiKey || '');
+  const [localNovelAiKey, setLocalNovelAiKey] = useState(apiConfig.novelAiApiKey || '');
+  const [localNovelAiEnabled, setLocalNovelAiEnabled] = useState(apiConfig.novelAiEnabled !== false);
+  const [localAutoIllustrationEnabled, setLocalAutoIllustrationEnabled] = useState(apiConfig.autoIllustrationEnabled !== false);
+  const [localNovelAiModel, setLocalNovelAiModel] = useState(apiConfig.novelAiModel || DEFAULT_NOVEL_AI_MODEL);
+  const [localNovelAiResolution, setLocalNovelAiResolution] = useState(apiConfig.novelAiResolution || DEFAULT_NOVEL_AI_RESOLUTION);
+  const [localNovelAiSteps, setLocalNovelAiSteps] = useState<number>(apiConfig.novelAiSteps || DEFAULT_NOVEL_AI_STEPS);
+  const [localNovelAiCfgScale, setLocalNovelAiCfgScale] = useState<number>(apiConfig.novelAiCfgScale || DEFAULT_NOVEL_AI_CFG_SCALE);
+  const [localNovelAiSampler, setLocalNovelAiSampler] = useState(apiConfig.novelAiSampler || DEFAULT_NOVEL_AI_SAMPLER);
+  const [localNovelAiSeed, setLocalNovelAiSeed] = useState<number>(typeof apiConfig.novelAiSeed === 'number' ? apiConfig.novelAiSeed : DEFAULT_NOVEL_AI_SEED);
+  const [localNovelAiUcPreset, setLocalNovelAiUcPreset] = useState<number>(typeof apiConfig.novelAiUcPreset === 'number' ? apiConfig.novelAiUcPreset : DEFAULT_NOVEL_AI_UC_PRESET);
+  const [localNovelAiPositivePrompt, setLocalNovelAiPositivePrompt] = useState(apiConfig.novelAiPositivePrompt || DEFAULT_NOVEL_AI_POSITIVE_PROMPT);
+  const [localNovelAiNegativePrompt, setLocalNovelAiNegativePrompt] = useState(apiConfig.novelAiNegativePrompt || DEFAULT_NOVEL_AI_NEGATIVE_PROMPT);
+  const [showNovelAiSettings, setShowNovelAiSettings] = useState(false);
+  const [showNovelAiAdvanced, setShowNovelAiAdvanced] = useState(false);
+  const [testingNovelAi, setTestingNovelAi] = useState(false);
+  const [novelAiTestResult, setNovelAiTestResult] = useState<string | null>(null);
+  const [novelAiPreview, setNovelAiPreview] = useState<string>('');
   const [showAceStepGuide, setShowAceStepGuide] = useState(false);
   const [otherStatusMsg, setOtherStatusMsg] = useState('');
   // 高级设置（流式/温度）默认折叠 — 大多数用户不需要碰
@@ -369,6 +399,18 @@ const Settings: React.FC = () => {
       setLocalMiniMaxGroupId(apiConfig.minimaxGroupId || '');
       setLocalMiniMaxRegion(apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic');
       setLocalAceStepKey(apiConfig.aceStepApiKey || '');
+      setLocalNovelAiKey(apiConfig.novelAiApiKey || '');
+      setLocalNovelAiEnabled(apiConfig.novelAiEnabled !== false);
+      setLocalAutoIllustrationEnabled(apiConfig.autoIllustrationEnabled !== false);
+      setLocalNovelAiModel(apiConfig.novelAiModel || DEFAULT_NOVEL_AI_MODEL);
+      setLocalNovelAiResolution(apiConfig.novelAiResolution || DEFAULT_NOVEL_AI_RESOLUTION);
+      setLocalNovelAiSteps(apiConfig.novelAiSteps || DEFAULT_NOVEL_AI_STEPS);
+      setLocalNovelAiCfgScale(apiConfig.novelAiCfgScale || DEFAULT_NOVEL_AI_CFG_SCALE);
+      setLocalNovelAiSampler(apiConfig.novelAiSampler || DEFAULT_NOVEL_AI_SAMPLER);
+      setLocalNovelAiSeed(typeof apiConfig.novelAiSeed === 'number' ? apiConfig.novelAiSeed : DEFAULT_NOVEL_AI_SEED);
+      setLocalNovelAiUcPreset(typeof apiConfig.novelAiUcPreset === 'number' ? apiConfig.novelAiUcPreset : DEFAULT_NOVEL_AI_UC_PRESET);
+      setLocalNovelAiPositivePrompt(apiConfig.novelAiPositivePrompt || DEFAULT_NOVEL_AI_POSITIVE_PROMPT);
+      setLocalNovelAiNegativePrompt(apiConfig.novelAiNegativePrompt || DEFAULT_NOVEL_AI_NEGATIVE_PROMPT);
   }, [apiConfig]);
 
   const loadPreset = (preset: typeof apiPresets[0]) => {
@@ -417,9 +459,55 @@ const Settings: React.FC = () => {
       minimaxGroupId: localMiniMaxGroupId,
       minimaxRegion: localMiniMaxRegion,
       aceStepApiKey: localAceStepKey,
+      novelAiApiKey: stripBearerPrefix(localNovelAiKey),
+      novelAiEnabled: localNovelAiEnabled,
+      autoIllustrationEnabled: localAutoIllustrationEnabled,
+      novelAiModel: localNovelAiModel,
+      novelAiResolution: localNovelAiResolution,
+      novelAiSteps: localNovelAiSteps,
+      novelAiCfgScale: localNovelAiCfgScale,
+      novelAiSampler: localNovelAiSampler,
+      novelAiSeed: localNovelAiSeed,
+      novelAiUcPreset: localNovelAiUcPreset,
+      novelAiPositivePrompt: localNovelAiPositivePrompt,
+      novelAiNegativePrompt: localNovelAiNegativePrompt,
     });
     setOtherStatusMsg('已保存');
     setTimeout(() => setOtherStatusMsg(''), 2000);
+  };
+
+  const handleTestNovelAi = async () => {
+    const key = stripBearerPrefix(localNovelAiKey);
+    if (!key) {
+      setNovelAiTestResult('请先填写 NovelAI API Key');
+      return;
+    }
+    setTestingNovelAi(true);
+    setNovelAiTestResult('测试生成中...');
+    setNovelAiPreview('');
+    try {
+      const result = await generateNovelAiImage('one character holding a phone near a softly lit window, gentle expression, upper body, cinematic composition', {
+        ...apiConfig,
+        novelAiApiKey: key,
+        novelAiEnabled: localNovelAiEnabled,
+        autoIllustrationEnabled: localAutoIllustrationEnabled,
+        novelAiModel: localNovelAiModel,
+        novelAiResolution: localNovelAiResolution,
+        novelAiSteps: localNovelAiSteps,
+        novelAiCfgScale: localNovelAiCfgScale,
+        novelAiSampler: localNovelAiSampler,
+        novelAiSeed: localNovelAiSeed,
+        novelAiUcPreset: localNovelAiUcPreset,
+        novelAiPositivePrompt: localNovelAiPositivePrompt,
+        novelAiNegativePrompt: localNovelAiNegativePrompt,
+      });
+      setNovelAiPreview(result.imageDataUrl);
+      setNovelAiTestResult('测试生成成功');
+    } catch {
+      setNovelAiTestResult('测试失败：请检查 Key、额度、模型或网络。');
+    } finally {
+      setTestingNovelAi(false);
+    }
   };
 
   const fetchModels = async () => {
@@ -1387,6 +1475,156 @@ const Settings: React.FC = () => {
                                     </p>
                                 </div>
                             </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="rounded-2xl border border-fuchsia-100/70 bg-fuchsia-50/45 overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setShowNovelAiSettings(v => !v)}
+                        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left active:bg-white/40 transition-colors"
+                    >
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-bold text-slate-700">NovelAI / 自動挿絵</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${stripBearerPrefix(localNovelAiKey) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                    {stripBearerPrefix(localNovelAiKey) ? '已配置' : '未配置'}
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">AI が重要場面タグを出した時だけ、本文表示後に挿絵を追加します。</p>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${showNovelAiSettings ? 'rotate-180' : ''}`}>
+                            <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                        </svg>
+                    </button>
+
+                    {showNovelAiSettings && (
+                        <div className="px-4 pb-4 space-y-3 animate-slide-down">
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setLocalNovelAiEnabled(v => !v)}
+                                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${localNovelAiEnabled ? 'bg-fuchsia-500 text-white border-fuchsia-500 shadow-sm' : 'bg-white/70 text-slate-500 border-slate-200'}`}
+                                >
+                                    NovelAI {localNovelAiEnabled ? 'ON' : 'OFF'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setLocalAutoIllustrationEnabled(v => !v)}
+                                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${localAutoIllustrationEnabled ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-white/70 text-slate-500 border-slate-200'}`}
+                                >
+                                    自動挿絵 {localAutoIllustrationEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">NovelAI API Key</label>
+                                <input
+                                    type="password"
+                                    name="novelai-api-key"
+                                    autoComplete="new-password"
+                                    spellCheck={false}
+                                    value={localNovelAiKey}
+                                    onChange={(e) => setLocalNovelAiKey(e.target.value)}
+                                    placeholder="Bearer 付きで貼っても保存時に自動整理"
+                                    className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1 pl-1">Key があり、自動挿絵が OFF でなければチャット内の自動挿絵は有効扱いです。</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Model</label>
+                                    <input
+                                        type="text"
+                                        value={localNovelAiModel}
+                                        onChange={(e) => setLocalNovelAiModel(e.target.value)}
+                                        className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2.5 text-xs font-mono focus:bg-white transition-all"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Resolution</label>
+                                    <select
+                                        value={localNovelAiResolution}
+                                        onChange={(e) => setLocalNovelAiResolution(e.target.value)}
+                                        className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2.5 text-xs font-semibold focus:bg-white transition-all"
+                                    >
+                                        <option value="832x1216">832x1216</option>
+                                        <option value="1024x1024">1024x1024</option>
+                                        <option value="1216x832">1216x832</option>
+                                        <option value="1024x1536">1024x1536</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Positive Prompt 固定部分</label>
+                                <textarea
+                                    value={localNovelAiPositivePrompt}
+                                    onChange={(e) => setLocalNovelAiPositivePrompt(e.target.value)}
+                                    rows={2}
+                                    className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-4 py-2.5 text-xs focus:bg-white transition-all resize-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Negative Prompt</label>
+                                <textarea
+                                    value={localNovelAiNegativePrompt}
+                                    onChange={(e) => setLocalNovelAiNegativePrompt(e.target.value)}
+                                    rows={2}
+                                    className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-4 py-2.5 text-xs focus:bg-white transition-all resize-none"
+                                />
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setShowNovelAiAdvanced(v => !v)}
+                                className="text-[11px] font-bold text-fuchsia-600 px-2 py-1 active:scale-95 transition-transform"
+                            >
+                                {showNovelAiAdvanced ? '收起 advanced' : 'advanced: steps / cfg / sampler / seed'}
+                            </button>
+
+                            {showNovelAiAdvanced && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block pl-1">Steps</label>
+                                        <input type="number" min={1} max={50} value={localNovelAiSteps} onChange={(e) => setLocalNovelAiSteps(Number(e.target.value))} className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2 text-xs" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block pl-1">CFG</label>
+                                        <input type="number" min={1} max={20} step={0.5} value={localNovelAiCfgScale} onChange={(e) => setLocalNovelAiCfgScale(Number(e.target.value))} className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2 text-xs" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block pl-1">Sampler</label>
+                                        <input type="text" value={localNovelAiSampler} onChange={(e) => setLocalNovelAiSampler(e.target.value)} className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2 text-xs font-mono" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block pl-1">Seed</label>
+                                        <input type="number" value={localNovelAiSeed} onChange={(e) => setLocalNovelAiSeed(Number(e.target.value))} className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2 text-xs" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block pl-1">UC Preset</label>
+                                        <input type="number" min={0} max={4} value={localNovelAiUcPreset} onChange={(e) => setLocalNovelAiUcPreset(Number(e.target.value))} className="w-full bg-white/70 border border-fuchsia-100 rounded-xl px-3 py-2 text-xs" />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleTestNovelAi}
+                                    disabled={testingNovelAi || !stripBearerPrefix(localNovelAiKey)}
+                                    className="px-4 py-2.5 rounded-xl bg-fuchsia-500 text-white text-xs font-bold shadow-sm disabled:opacity-50 disabled:shadow-none active:scale-95 transition-all"
+                                >
+                                    {testingNovelAi ? '测试中...' : 'テスト生成'}
+                                </button>
+                                {novelAiTestResult && <span className="text-[11px] text-slate-500">{novelAiTestResult}</span>}
+                            </div>
+                            {novelAiPreview && (
+                                <img src={novelAiPreview} alt="NovelAI preview" className="w-24 h-24 object-cover rounded-xl border border-white/80 shadow-sm" />
+                            )}
                         </div>
                     )}
                 </div>

@@ -33,6 +33,7 @@ import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts, parseVoiceOutput } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
+import { createAutoIllustrationDetector } from '../utils/autoIllustration';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 type InstantToolUiStatus = {
@@ -166,6 +167,17 @@ const Chat: React.FC = () => {
         return emojis.filter(e => !e.categoryId || !hiddenIds.has(e.categoryId));
     }, [emojis, categories, visibleCategories]);
 
+    const autoIllustrationDetector = useMemo(() => {
+        if (!char) return undefined;
+        return createAutoIllustrationDetector({
+            char,
+            apiConfig,
+            setMessages,
+            getVisibleCount: () => visibleCountRef.current,
+            addToast,
+        });
+    }, [char, apiConfig, addToast]);
+
 
 
 
@@ -195,6 +207,7 @@ const Chat: React.FC = () => {
         luckinMiniAppRef,
         luckinChatRef,
         updateCharacter,
+        illustrationDetector: autoIllustrationDetector,
     });
 
     // --- Voice TTS for chat messages ---

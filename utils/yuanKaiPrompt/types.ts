@@ -30,6 +30,9 @@ export interface YuanKaiPromptRuntimeSnapshot {
     apiHistoryMessageCount: number;
     activeBlocks: string[];
     emojiNames: string[];
+    chatStatusText: string;
+    chatStatusIsBusy: boolean;
+    latestThought: string;
 }
 
 export interface YuanKaiPromptContext {
@@ -54,4 +57,5 @@ export interface AdaptSuKaiPromptInput {
     apiHistoryMessageCount: number;
     emojiNames: string[];
     flags: YuanKaiPromptModeFlags;
+    innerState?: string;
 }

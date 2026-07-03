@@ -11,6 +11,14 @@ export function getLastInnerState(charId: string): string {
     } catch { return ''; }
 }
 
+export function setLastInnerState(charId: string, innerState: string): void {
+    const text = String(innerState || '').trim();
+    if (!charId || !text) return;
+    try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(lastInnerStateKey(charId), text);
+    } catch { /* ignore */ }
+}
+
 // 情绪评估结果「解析 + 落 buff」的共用实现.
 //
 // 原本内联在 hooks/useChatAI.ts 的 evaluateEmotionBackground 里. 提取出来是为了让两条路径共用:
@@ -104,7 +112,7 @@ export async function applyEmotionEvalRaw(
             : null;
 
         if (innerStateOut) {
-            try { localStorage.setItem(lastInnerStateKey(charData.id), innerStateOut); } catch { /* ignore */ }
+            setLastInnerState(charData.id, innerStateOut);
         }
 
         if (!result.changed) {

@@ -15,11 +15,16 @@ export interface YuanKaiThoughtUpdate {
     updatedAt: number;
 }
 
+export interface YuanKaiIllustrationTag {
+    rawHint: unknown;
+    updatedAt: number;
+}
+
 const normalizeStatusText = (value: unknown): string =>
-    String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 32);
+    String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 16);
 
 const normalizeThoughtText = (value: unknown): string =>
-    String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
 
 export function extractYuanKaiThoughtUpdate(text: string): { content: string; thought: YuanKaiThoughtUpdate | null } {
     let latest: YuanKaiThoughtUpdate | null = null;
@@ -57,11 +62,27 @@ export function extractYuanKaiStatusUpdate(text: string): { content: string; sta
     return { content, status: latest };
 }
 
+export function extractYuanKaiIllustrationHint(text: string): { content: string; illustration: YuanKaiIllustrationTag | null } {
+    let latest: YuanKaiIllustrationTag | null = null;
+    const content = String(text || '').replace(/\[\[YUAN_KAI_ILLUSTRATION:\s*({[\s\S]*?})\s*\]\]/gi, (_match, jsonText) => {
+        try {
+            latest = {
+                rawHint: JSON.parse(jsonText),
+                updatedAt: Date.now(),
+            };
+        } catch {
+            // Strip malformed internal tags from display even if the detector cannot use them.
+        }
+        return '';
+    }).trim();
+    return { content, illustration: latest };
+}
+
 export function sanitizeYuanKaiHiddenTagsForDisplay(text: string): string {
     return String(text || '')
         .replace(/<yk_hidden>[\s\S]*?<\/yk_hidden>/gi, '')
         .replace(/<yuan_kai_hidden>[\s\S]*?<\/yuan_kai_hidden>/gi, '')
-        .replace(/\[\[(?:YK|YUAN_KAI)_(?:HIDDEN|THOUGHT|PRIVATE|INTERNAL):[\s\S]*?\]\]/gi, '')
+        .replace(/\[\[(?:YK|YUAN_KAI)_(?:HIDDEN|THOUGHT|PRIVATE|INTERNAL|ILLUSTRATION):[\s\S]*?\]\]/gi, '')
         .replace(/\[\/?(?:yk|yuan_kai)_hidden\]/gi, '')
         .trim();
 }
@@ -78,7 +99,8 @@ const pushContent = (out: string[], value: unknown): void => {
 export function normalizeYuanKaiSpecialOutputForDisplay(text: string): string {
     const withoutThought = extractYuanKaiThoughtUpdate(text).content;
     const withoutStatus = extractYuanKaiStatusUpdate(withoutThought).content;
-    const sanitized = sanitizeYuanKaiHiddenTagsForDisplay(withoutStatus);
+    const withoutIllustration = extractYuanKaiIllustrationHint(withoutStatus).content;
+    const sanitized = sanitizeYuanKaiHiddenTagsForDisplay(withoutIllustration);
     const candidate = stripWholeCodeFence(sanitized);
     if (!candidate.startsWith('[')) return sanitized;
 

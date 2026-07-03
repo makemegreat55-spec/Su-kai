@@ -179,7 +179,9 @@ const defaultRealtimeConfig: RealtimeConfig = {
 // 记忆宫殿全局配置（所有角色共用 embedding、副 LLM 和 rerank）
 export interface MemoryPalaceGlobalConfig {
   embedding: {
+    provider?: 'openai-compatible' | 'openrouter' | 'custom';
     baseUrl: string;
+    modelsUrl?: string;
     apiKey: string;
     model: string;
     dimensions: number;
@@ -194,7 +196,9 @@ export interface MemoryPalaceGlobalConfig {
   // { model, query, documents, top_n } → { results: [{index, relevance_score}] }
   rerank: {
     enabled: boolean;
+    provider?: 'openai-compatible' | 'openrouter' | 'custom';
     baseUrl: string;
+    modelsUrl?: string;
     apiKey: string;
     model: string;
     topN: number; // 额外召回条数（去重后追加到主 15 条后面）
@@ -202,9 +206,9 @@ export interface MemoryPalaceGlobalConfig {
 }
 
 const defaultMemoryPalaceConfig: MemoryPalaceGlobalConfig = {
-  embedding: { baseUrl: '', apiKey: '', model: 'BAAI/bge-m3', dimensions: 1024 },
+  embedding: { provider: 'openai-compatible', baseUrl: '', modelsUrl: '', apiKey: '', model: 'BAAI/bge-m3', dimensions: 1024 },
   lightLLM: { baseUrl: '', apiKey: '', model: '' },
-  rerank: { enabled: false, baseUrl: '', apiKey: '', model: 'BAAI/bge-reranker-v2-m3', topN: 5 },
+  rerank: { enabled: false, provider: 'openai-compatible', baseUrl: '', modelsUrl: '', apiKey: '', model: 'BAAI/bge-reranker-v2-m3', topN: 5 },
 };
 
 interface OSContextType {
@@ -362,6 +366,18 @@ const defaultApiConfig: APIConfig = {
   minimaxApiKey: '',
   minimaxGroupId: '',
   minimaxRegion: 'domestic',
+  novelAiApiKey: '',
+  novelAiModel: 'nai-diffusion-4-5-full',
+  novelAiEnabled: true,
+  novelAiResolution: '1024x1024',
+  novelAiSteps: 28,
+  novelAiCfgScale: 5,
+  novelAiSampler: 'k_euler_ancestral',
+  novelAiSeed: -1,
+  novelAiUcPreset: 1,
+  novelAiPositivePrompt: 'best quality, amazing quality, very aesthetic, anime illustration',
+  novelAiNegativePrompt: 'lowres, bad anatomy, bad hands, text, watermark, logo, speech bubble, ui, cropped',
+  autoIllustrationEnabled: true,
   model: 'gpt-4o-mini',
   stream: false,
   temperature: 0.85,

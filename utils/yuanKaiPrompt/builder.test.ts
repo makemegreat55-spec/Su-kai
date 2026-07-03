@@ -15,6 +15,7 @@ const makeChar = (): CharacterProfile => ({
     mountedWorldbooks: [{ id: 'wb-1', title: '雨城设定', content: '雨城会在夜里发光', category: '城市' }],
     memoryPalaceEnabled: true,
     memoryPalaceInjection: 'LEGACY MEMORY PALACE UNIQUE',
+    chatStatus: { text: '返信ゆっくり', isBusy: true, updatedAt: 1, source: 'yuan-kai' },
 } as CharacterProfile);
 
 const userProfile: UserProfile = {
@@ -38,6 +39,7 @@ describe('YuanKaiPromptBuilder', () => {
             historyMessageCount: 12,
             apiHistoryMessageCount: 10,
             emojiNames: ['笑', '哭'],
+            innerState: 'さっきの返事のあと、少しだけ距離感を測っている。',
             flags: {
                 bilingualActive: false,
                 htmlActive: false,
@@ -55,12 +57,15 @@ describe('YuanKaiPromptBuilder', () => {
         expect((prompt.match(/LEGACY CONTEXT UNIQUE/g) || []).length).toBe(1);
         expect(prompt).toContain('不要输出 yuan-kai JSON 行动数组');
         expect(prompt).toContain('[[SEND_EMOJI: 表情名称]]');
-        expect(prompt).toContain('[[YUAN_KAI_THOUGHT: いまの内心を一文]]');
-        expect(prompt).toContain('[[YUAN_KAI_STATUS: {"type":"update_status","status_text":"短状态","is_busy":false}]]');
-        expect(prompt).toContain('1. hidden thought / 心声');
-        expect(prompt).toContain('2. visible messages');
-        expect(prompt).toContain('3. optional status update');
-        expect(prompt).toContain('4. optional actions');
+        expect(prompt).toContain('[[YUAN_KAI_THOUGHT: 内心を一文で書く]]');
+        expect(prompt).toContain('[[YUAN_KAI_STATUS: {"type":"update_status","status_text":"短い状態","is_busy":false}]]');
+        expect(prompt).toContain('[[YUAN_KAI_ILLUSTRATION: {"trigger":true');
+        expect(prompt).toContain('まず普通のチャット返信を書く');
+        expect(prompt).toContain('表示本文 → `YUAN_KAI_ILLUSTRATION` → `YUAN_KAI_STATUS` → `YUAN_KAI_THOUGHT`');
+        expect(prompt).toContain('画風、品質、artist、masterpiece、best quality、negative prompt は書かない');
+        expect(prompt).toContain('現在の表示ステータス: 返信ゆっくり');
+        expect(prompt).toContain('忙しさ: 忙しめ / 返信は少し遅い');
+        expect(prompt).toContain('前回の心声: さっきの返事のあと、少しだけ距離感を測っている。');
         expect(prompt).toContain('实际聊天历史会在 system prompt 后作为 API messages 传入');
     });
 

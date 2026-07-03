@@ -19,6 +19,12 @@
 
 import type { Message } from '../../types';
 import type { EmbeddingConfig, PersonalityStyle, RemoteVectorConfig, ScoredMemory } from './types';
+import {
+    inferEmbeddingProvider,
+    normalizeApiKey,
+    normalizeOpenRouterBaseUrl,
+    OPENROUTER_RERANK_MODEL,
+} from './providerConfig';
 
 /** 从 localStorage 读取远程向量配置（避免在每个调用点都传参） */
 function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
@@ -33,22 +39,38 @@ function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
 /** 从 localStorage 读取 rerank 配置。关闭或未配齐时返回 undefined，调用方跳过。 */
 interface StoredRerankConfig {
     enabled?: boolean;
+    provider?: EmbeddingConfig['provider'];
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    modelsUrl?: string;
     topN?: number;
 }
-function getRerankConfig(): { baseUrl: string; apiKey: string; model: string; topN: number } | undefined {
+function getRerankConfig(): { provider?: EmbeddingConfig['provider']; baseUrl: string; apiKey: string; model: string; topN: number } | undefined {
     try {
         const raw = localStorage.getItem('os_memory_palace_config');
         if (!raw) return undefined;
         const parsed = JSON.parse(raw);
         const r: StoredRerankConfig | undefined = parsed?.rerank;
-        if (!r?.enabled || !r.baseUrl || !r.apiKey || !r.model) return undefined;
+        const embedding: Partial<EmbeddingConfig> | undefined = parsed?.embedding;
+        const provider = inferEmbeddingProvider(
+            r?.provider || embedding?.provider,
+            r?.baseUrl || embedding?.baseUrl,
+            r?.modelsUrl || embedding?.modelsUrl,
+        );
+        const baseUrl = provider === 'openrouter'
+            ? normalizeOpenRouterBaseUrl(r?.baseUrl || embedding?.baseUrl || '')
+            : (r?.baseUrl || '');
+        const apiKey = normalizeApiKey(provider === 'openrouter'
+            ? (r?.apiKey || embedding?.apiKey || '')
+            : (r?.apiKey || ''));
+        const model = (r?.model || (provider === 'openrouter' ? OPENROUTER_RERANK_MODEL : '')).trim();
+        if (!r?.enabled || !baseUrl || !apiKey || !model) return undefined;
         return {
-            baseUrl: r.baseUrl,
-            apiKey: r.apiKey,
-            model: r.model,
+            provider,
+            baseUrl,
+            apiKey,
+            model,
             topN: Math.max(1, Math.min(20, r.topN ?? 5)),
         };
     } catch { return undefined; }
@@ -577,7 +599,7 @@ export async function retrieveMemories(
                         const rerankWanted = rerankConfig!.topN;
                         const rerankAskForN = Math.min(pool.length, rerankWanted + 10);
                         const rrResults = await rerankDocuments(
-                            { baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
+                            { provider: rerankConfig!.provider, baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
                             joinedUserQuery,
                             pool.map(p => p.node.content),
                             rerankAskForN,
@@ -690,7 +712,7 @@ export async function retrieveMemories(
                         const rerankWanted = rerankConfig!.topN;
                         const rerankAskForN = Math.min(pool.length, rerankWanted + 10);
                         const rrResults = await rerankDocuments(
-                            { baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
+                            { provider: rerankConfig!.provider, baseUrl: rerankConfig!.baseUrl, apiKey: rerankConfig!.apiKey, model: rerankConfig!.model },
                             joinedUserQuery,
                             pool.map(p => p.node.content),
                             rerankAskForN,

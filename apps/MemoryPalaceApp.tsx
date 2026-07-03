@@ -12,6 +12,18 @@ import {
 } from '../utils/memoryPalace';
 import type { Anticipation, MigrationProgress, DigestResult, MemoryLink, EventBox } from '../utils/memoryPalace';
 import type { Message } from '../types';
+import type { EmbeddingProvider } from '../utils/memoryPalace/types';
+import {
+    inferEmbeddingProvider,
+    normalizeApiKey,
+    normalizeEmbeddingConfig,
+    normalizeOpenRouterBaseUrl,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_EMBEDDING_MODEL,
+    OPENROUTER_EMBEDDING_MODELS_URL,
+    OPENROUTER_RERANK_MODEL,
+    type ProviderModelOption,
+} from '../utils/memoryPalace/providerConfig';
 
 /** 手动总结面板：每页渲染多少条聊天记录（翻页，避免一次性塞几百条 DOM 卡顿） */
 const RANGE_PAGE_SIZE = 100;
@@ -418,6 +430,26 @@ const ROOM_COLORS: Record<MemoryRoom, string> = {
 const inputClass = "w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-300 transition-all";
 const labelClass = "text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1";
 
+const PROVIDER_OPTIONS: Array<{ id: EmbeddingProvider; label: string; desc: string; color: string }> = [
+    { id: 'openai-compatible', label: 'OpenAI 兼容', desc: 'SiliconFlow / Jina / 自建兼容端点', color: '#7c3aed' },
+    { id: 'openrouter', label: 'OpenRouter', desc: 'OpenRouter から Embedding / Rerank を取り入れ', color: '#2563eb' },
+    { id: 'custom', label: '自定义', desc: '手动维护 endpoint 与模型名', color: '#475569' },
+];
+
+const RERANK_PRESETS: Record<EmbeddingProvider, Array<{ model: string; tag: string; desc: string; color: string }>> = {
+    'openai-compatible': [
+        { model: 'BAAI/bge-reranker-v2-m3', tag: '推荐', desc: '多语言 cross-encoder，中文强，免费额度大', color: '#0369a1' },
+        { model: 'Pro/BAAI/bge-reranker-v2-m3', tag: 'Pro 版', desc: '加速推理，延迟更低，按量计费', color: '#f59e0b' },
+        { model: 'netease-youdao/bce-reranker-base_v1', tag: '免费', desc: '网易有道 BCE，中文专精', color: '#10b981' },
+    ],
+    openrouter: [
+        { model: OPENROUTER_RERANK_MODEL, tag: 'OpenRouter', desc: '官方 Rerank 候选，使用上方 Embedding Key', color: '#2563eb' },
+    ],
+    custom: [
+        { model: 'BAAI/bge-reranker-v2-m3', tag: '示例', desc: '兼容 /rerank 协议的模型名', color: '#475569' },
+    ],
+};
+
 // ─── 主组件 ───────────────────────────────────────────
 
 export default function MemoryPalaceApp() {
@@ -538,10 +570,20 @@ export default function MemoryPalaceApp() {
     const [saving, setSaving] = useState(false);
 
     // Embedding 配置本地状态（从全局配置初始化）
+    const initialEmbeddingProvider = inferEmbeddingProvider(
+        memoryPalaceConfig.embedding.provider,
+        memoryPalaceConfig.embedding.baseUrl,
+        memoryPalaceConfig.embedding.modelsUrl,
+    );
+    const [embProvider, setEmbProvider] = useState<EmbeddingProvider>(initialEmbeddingProvider);
     const [embUrl, setEmbUrl] = useState(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
+    const [embModelsUrl, setEmbModelsUrl] = useState(memoryPalaceConfig.embedding.modelsUrl || (initialEmbeddingProvider === 'openrouter' ? OPENROUTER_EMBEDDING_MODELS_URL : ''));
     const [embKey, setEmbKey] = useState(memoryPalaceConfig.embedding.apiKey || '');
     const [embModel, setEmbModel] = useState(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
     const [embDimensions, setEmbDimensions] = useState(memoryPalaceConfig.embedding.dimensions || 1024);
+    const [embModelOptions, setEmbModelOptions] = useState<ProviderModelOption[]>([]);
+    const [embModelsLoading, setEmbModelsLoading] = useState(false);
+    const [embModelsResult, setEmbModelsResult] = useState<string | null>(null);
     const [configSaved, setConfigSaved] = useState(false);
     const [testingEmb, setTestingEmb] = useState(false);
     const [testResult, setTestResult] = useState<string | null>(null);
@@ -555,11 +597,20 @@ export default function MemoryPalaceApp() {
     const [lightTestResult, setLightTestResult] = useState<string | null>(null);
 
     // Rerank 配置（全局；cross-encoder 二次排序，独立于主召回的可选增强通道）
+    const initialRerankProvider = inferEmbeddingProvider(
+        memoryPalaceConfig.rerank?.provider || initialEmbeddingProvider,
+        memoryPalaceConfig.rerank?.baseUrl || memoryPalaceConfig.embedding.baseUrl,
+        memoryPalaceConfig.rerank?.modelsUrl,
+    );
     const [rrEnabled, setRrEnabled] = useState(!!memoryPalaceConfig.rerank?.enabled);
+    const [rrProvider, setRrProvider] = useState<EmbeddingProvider>(initialRerankProvider);
     const [rrUrl, setRrUrl] = useState(memoryPalaceConfig.rerank?.baseUrl || '');
     const [rrKey, setRrKey] = useState(memoryPalaceConfig.rerank?.apiKey || '');
     const [rrModel, setRrModel] = useState(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
     const [rrTopN, setRrTopN] = useState(memoryPalaceConfig.rerank?.topN || 5);
+    const [rrModelOptions, setRrModelOptions] = useState<ProviderModelOption[]>([]);
+    const [rrModelsLoading, setRrModelsLoading] = useState(false);
+    const [rrModelsResult, setRrModelsResult] = useState<string | null>(null);
     const [rrSaved, setRrSaved] = useState(false);
     const [rrTesting, setRrTesting] = useState(false);
     const [rrTestResult, setRrTestResult] = useState<string | null>(null);
@@ -574,7 +625,14 @@ export default function MemoryPalaceApp() {
 
     // 全局配置变更时同步到本地状态
     useEffect(() => {
+        const nextEmbProvider = inferEmbeddingProvider(
+            memoryPalaceConfig.embedding.provider,
+            memoryPalaceConfig.embedding.baseUrl,
+            memoryPalaceConfig.embedding.modelsUrl,
+        );
+        setEmbProvider(nextEmbProvider);
         setEmbUrl(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
+        setEmbModelsUrl(memoryPalaceConfig.embedding.modelsUrl || (nextEmbProvider === 'openrouter' ? OPENROUTER_EMBEDDING_MODELS_URL : ''));
         setEmbKey(memoryPalaceConfig.embedding.apiKey || '');
         setEmbModel(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
         setEmbDimensions(memoryPalaceConfig.embedding.dimensions || 1024);
@@ -582,6 +640,11 @@ export default function MemoryPalaceApp() {
         setLightKey(memoryPalaceConfig.lightLLM.apiKey || '');
         setLightModel(memoryPalaceConfig.lightLLM.model || '');
         setRrEnabled(!!memoryPalaceConfig.rerank?.enabled);
+        setRrProvider(inferEmbeddingProvider(
+            memoryPalaceConfig.rerank?.provider || nextEmbProvider,
+            memoryPalaceConfig.rerank?.baseUrl || memoryPalaceConfig.embedding.baseUrl,
+            memoryPalaceConfig.rerank?.modelsUrl,
+        ));
         setRrUrl(memoryPalaceConfig.rerank?.baseUrl || '');
         setRrKey(memoryPalaceConfig.rerank?.apiKey || '');
         setRrModel(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
@@ -979,24 +1042,116 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const handleSaveEmbeddingConfig = () => {
-        updateMemoryPalaceConfig({
-            embedding: {
+    const applyEmbeddingProvider = (provider: EmbeddingProvider) => {
+        setEmbProvider(provider);
+        setEmbModelsResult(null);
+        setEmbModelOptions([]);
+        if (provider === 'openrouter') {
+            setEmbUrl(OPENROUTER_BASE_URL);
+            setEmbModelsUrl(OPENROUTER_EMBEDDING_MODELS_URL);
+            setEmbModel(OPENROUTER_EMBEDDING_MODEL);
+            setEmbDimensions(1024);
+            setRrProvider('openrouter');
+            setRrUrl(OPENROUTER_BASE_URL);
+            setRrKey('');
+            setRrModel(OPENROUTER_RERANK_MODEL);
+            setRrModelsResult(null);
+            setRrModelOptions([]);
+            return;
+        }
+        if (provider === 'openai-compatible') {
+            if (!embUrl.trim() || embProvider === 'openrouter') setEmbUrl('https://api.siliconflow.cn/v1');
+            if (embModel === OPENROUTER_EMBEDDING_MODEL) setEmbModel('BAAI/bge-m3');
+            if (rrProvider === 'openrouter') {
+                setRrProvider('openai-compatible');
+                setRrUrl('');
+                setRrModel('BAAI/bge-reranker-v2-m3');
+            }
+        }
+        setEmbModelsUrl('');
+    };
+
+    const applyRerankProvider = (provider: EmbeddingProvider) => {
+        setRrProvider(provider);
+        setRrModelsResult(null);
+        setRrModelOptions([]);
+        if (provider === 'openrouter') {
+            setRrUrl(OPENROUTER_BASE_URL);
+            setRrKey('');
+            setRrModel(OPENROUTER_RERANK_MODEL);
+            return;
+        }
+        if (provider === 'openai-compatible') {
+            if (!rrUrl.trim() || rrProvider === 'openrouter') setRrUrl(embProvider === 'openrouter' ? '' : embUrl.trim());
+            if (rrModel === OPENROUTER_RERANK_MODEL) setRrModel('BAAI/bge-reranker-v2-m3');
+        }
+    };
+
+    const effectiveRerankKey = rrProvider === 'openrouter' ? embKey.trim() : rrKey.trim();
+    const effectiveRerankUrl = rrProvider === 'openrouter' ? normalizeOpenRouterBaseUrl(rrUrl.trim() || embUrl.trim() || OPENROUTER_BASE_URL) : rrUrl.trim();
+
+    const handleFetchEmbeddingModels = async () => {
+        if (!embKey.trim()) {
+            setEmbModelsResult('[err]请先填写 Embedding API Key');
+            return;
+        }
+        setEmbModelsLoading(true);
+        setEmbModelsResult(null);
+        try {
+            const { fetchEmbeddingModels } = await import('../utils/memoryPalace/embedding');
+            const result = await fetchEmbeddingModels({
+                provider: embProvider,
                 baseUrl: embUrl.trim(),
+                modelsUrl: embModelsUrl.trim(),
                 apiKey: embKey.trim(),
-                model: embModel.trim() || 'BAAI/bge-m3',
+                model: embModel.trim() || (embProvider === 'openrouter' ? OPENROUTER_EMBEDDING_MODEL : 'BAAI/bge-m3'),
                 dimensions: embDimensions || 1024,
-            },
+            });
+            setEmbModelOptions(result.models);
+            setEmbModelsResult(`${result.fallback ? '[warn]' : '[ok]'}已取り入れ ${result.models.length} 个 Embedding 模型${result.fallback ? '（显示内置候选）' : ''}`);
+        } catch (err: any) {
+            setEmbModelsResult(`[err]取り入れ失败：${err.message}`);
+        } finally {
+            setEmbModelsLoading(false);
+        }
+    };
+
+    const handleFetchRerankModels = async () => {
+        setRrModelsLoading(true);
+        setRrModelsResult(null);
+        try {
+            const { fetchRerankModels } = await import('../utils/memoryPalace/rerank');
+            const result = await fetchRerankModels({
+                provider: rrProvider,
+                baseUrl: effectiveRerankUrl,
+                apiKey: effectiveRerankKey,
+                model: rrModel.trim() || (rrProvider === 'openrouter' ? OPENROUTER_RERANK_MODEL : 'BAAI/bge-reranker-v2-m3'),
+            });
+            setRrModelOptions(result.models);
+            setRrModelsResult(`[ok]已取り入れ ${result.models.length} 个 Rerank 候选${result.provider === 'openrouter' ? '（OpenRouter 使用 Embedding Key）' : ''}`);
+        } catch (err: any) {
+            setRrModelsResult(`[err]取り入れ失败：${err.message}`);
+        } finally {
+            setRrModelsLoading(false);
+        }
+    };
+
+    const handleSaveEmbeddingConfig = () => {
+        const nextEmbedding = normalizeEmbeddingConfig({
+            provider: embProvider,
+            baseUrl: embUrl.trim(),
+            modelsUrl: embModelsUrl.trim(),
+            apiKey: embKey.trim(),
+            model: embModel.trim() || (embProvider === 'openrouter' ? OPENROUTER_EMBEDDING_MODEL : 'BAAI/bge-m3'),
+            dimensions: embDimensions || 1024,
+        });
+        updateMemoryPalaceConfig({
+            embedding: nextEmbedding,
         });
         // 同步到当前角色的 embeddingConfig（兼容已有的 injectMemoryPalace 调用）
         if (char) {
             updateCharacter(char.id, {
-                embeddingConfig: {
-                    baseUrl: embUrl.trim(),
-                    apiKey: embKey.trim(),
-                    model: embModel.trim() || 'BAAI/bge-m3',
-                    dimensions: embDimensions || 1024,
-                },
+                embeddingConfig: nextEmbedding,
             } as any);
         }
         setConfigSaved(true);
@@ -1004,12 +1159,16 @@ export default function MemoryPalaceApp() {
     };
 
     const handleSaveRerankConfig = () => {
+        const provider = rrProvider;
+        const isOpenRouter = provider === 'openrouter';
         updateMemoryPalaceConfig({
             rerank: {
                 enabled: rrEnabled,
-                baseUrl: rrUrl.trim(),
-                apiKey: rrKey.trim(),
-                model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3',
+                provider,
+                baseUrl: isOpenRouter ? effectiveRerankUrl : rrUrl.trim(),
+                modelsUrl: '',
+                apiKey: isOpenRouter ? '' : normalizeApiKey(rrKey),
+                model: rrModel.trim() || (isOpenRouter ? OPENROUTER_RERANK_MODEL : 'BAAI/bge-reranker-v2-m3'),
                 topN: Math.max(1, Math.min(20, rrTopN || 5)),
             },
         });
@@ -2610,11 +2769,10 @@ export default function MemoryPalaceApp() {
                 <div style={{ background: '#f8f7ff', borderRadius: 16, padding: 16, border: '1px solid #e9e5ff' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Icon name="link" size={14} />
-                        <span>Embedding API（OpenAI 兼容格式）</span>
+                        <span>Embedding API（Provider / OpenAI 兼容格式）</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
-                        推荐使用硅基流动（SiliconFlow），注册即送免费额度。
-                        下方选择模型后只需填入 API Key 即可。
+                        可使用硅基流动（SiliconFlow）等 OpenAI 兼容端点，也可以切到 OpenRouter 取り入れ Embedding 模型。
                         <br/>
                         <span style={{ color: '#a16207', fontWeight: 600 }}>
                             注意：Embedding 用的是 <code>/embeddings</code> 端点，和主 API 不通用，因此
@@ -2623,6 +2781,27 @@ export default function MemoryPalaceApp() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                            <label className={labelClass}>PROVIDER</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {PROVIDER_OPTIONS.map(opt => {
+                                    const isActive = embProvider === opt.id;
+                                    return (
+                                        <button key={opt.id} onClick={() => applyEmbeddingProvider(opt.id)} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8,
+                                            padding: '10px 14px', borderRadius: 12, fontSize: 12,
+                                            border: isActive ? `2px solid ${opt.color}` : '1px solid #e5e7eb',
+                                            background: isActive ? `${opt.color}11` : 'white',
+                                            cursor: 'pointer', textAlign: 'left', width: '100%',
+                                        }}>
+                                            <span style={{ fontWeight: 700, fontSize: 11, color: opt.color, whiteSpace: 'nowrap' }}>{opt.label}</span>
+                                            <span style={{ fontSize: 10, color: '#6b7280' }}>{opt.desc}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         <div>
                             <label className={labelClass}>BASE URL</label>
                             <input
@@ -2633,6 +2812,22 @@ export default function MemoryPalaceApp() {
                                 className={inputClass}
                             />
                         </div>
+
+                        {embProvider === 'openrouter' && (
+                            <div>
+                                <label className={labelClass}>MODEL LIST URL</label>
+                                <input
+                                    type="text"
+                                    value={embModelsUrl}
+                                    onChange={e => setEmbModelsUrl(e.target.value)}
+                                    placeholder={OPENROUTER_EMBEDDING_MODELS_URL}
+                                    className={inputClass}
+                                />
+                                <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, paddingLeft: 4 }}>
+                                    OpenRouter は <code>/embeddings/models</code> から Embedding モデルだけ取り入れます。
+                                </div>
+                            </div>
+                        )}
 
                         <div>
                             <label className={labelClass}>API KEY</label>
@@ -2645,7 +2840,7 @@ export default function MemoryPalaceApp() {
                                     className={inputClass}
                                     style={{ flex: 1 }}
                                 />
-                                <button onClick={() => window.open('https://cloud.siliconflow.cn/account/ak', '_blank')} style={{
+                                <button onClick={() => window.open(embProvider === 'openrouter' ? 'https://openrouter.ai/settings/keys' : 'https://cloud.siliconflow.cn/account/ak', '_blank')} style={{
                                     padding: '8px 12px', borderRadius: 10, fontSize: 11, fontWeight: 600,
                                     border: '1px solid #e9e5ff', background: 'white', color: '#7c3aed',
                                     cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
@@ -2709,6 +2904,48 @@ export default function MemoryPalaceApp() {
                             <div style={{ fontSize: 10, color: '#9ca3af', paddingLeft: 4, marginBottom: 4 }}>
                                 或手动输入模型名（支持任何 OpenAI 兼容的 Embedding 端点）
                             </div>
+                            <button
+                                onClick={handleFetchEmbeddingModels}
+                                disabled={embModelsLoading || !embKey.trim()}
+                                style={{
+                                    width: '100%',
+                                    marginBottom: 8,
+                                    padding: '9px 0',
+                                    borderRadius: 12,
+                                    border: '1px solid #7c3aed33',
+                                    background: (!embKey.trim() || embModelsLoading) ? '#f1f5f9' : 'white',
+                                    color: (!embKey.trim() || embModelsLoading) ? '#94a3b8' : '#7c3aed',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: (!embKey.trim() || embModelsLoading) ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                {embModelsLoading ? '取り入れ中...' : 'Embedding 模型を取り入れ'}
+                            </button>
+                            {embModelsResult && (
+                                <div style={{
+                                    marginBottom: 8, fontSize: 11, padding: '7px 10px', borderRadius: 8,
+                                    background: embModelsResult.startsWith('[ok]') ? '#f0fdf4' : embModelsResult.startsWith('[warn]') ? '#fffbeb' : '#fef2f2',
+                                    color: embModelsResult.startsWith('[ok]') ? '#16a34a' : embModelsResult.startsWith('[warn]') ? '#92400e' : '#dc2626',
+                                }}>
+                                    <StatusMessage msg={embModelsResult} />
+                                </div>
+                            )}
+                            {embModelOptions.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                                    {embModelOptions.slice(0, 8).map(opt => (
+                                        <button key={opt.id} onClick={() => setEmbModel(opt.id)} style={{
+                                            padding: '8px 10px', borderRadius: 10, fontSize: 11,
+                                            border: embModel === opt.id ? '2px solid #7c3aed' : '1px solid #e5e7eb',
+                                            background: embModel === opt.id ? '#7c3aed11' : 'white',
+                                            color: '#1f2937', cursor: 'pointer', textAlign: 'left',
+                                        }}>
+                                            <span style={{ fontWeight: 700 }}>{opt.id}</span>
+                                            {opt.name && opt.name !== opt.id && <span style={{ color: '#64748b', marginLeft: 6 }}>{opt.name}</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <input
                                 type="text"
                                 value={embModel}
@@ -2762,9 +2999,11 @@ export default function MemoryPalaceApp() {
                             try {
                                 const { getEmbedding } = await import('../utils/memoryPalace/embedding');
                                 const config = {
+                                    provider: embProvider,
                                     baseUrl: embUrl.trim(),
+                                    modelsUrl: embModelsUrl.trim(),
                                     apiKey: embKey.trim(),
-                                    model: embModel.trim() || 'BAAI/bge-m3',
+                                    model: embModel.trim() || (embProvider === 'openrouter' ? OPENROUTER_EMBEDDING_MODEL : 'BAAI/bge-m3'),
                                     dimensions: embDimensions || 1024,
                                 };
                                 const vec = await getEmbedding('测试文本', config);
@@ -2818,10 +3057,10 @@ export default function MemoryPalaceApp() {
                         {rrEnabled && (
                             <span style={{
                                 fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                                color: (rrUrl && rrKey) ? '#15803d' : '#92400e',
-                                background: (rrUrl && rrKey) ? '#dcfce7' : '#fef3c7',
+                                color: (effectiveRerankUrl && effectiveRerankKey) ? '#15803d' : '#92400e',
+                                background: (effectiveRerankUrl && effectiveRerankKey) ? '#dcfce7' : '#fef3c7',
                             }}>
-                                {(rrUrl && rrKey) ? '已启用' : '待配置'}
+                                {(effectiveRerankUrl && effectiveRerankKey) ? '已启用' : '待配置'}
                             </span>
                         )}
                     </summary>
@@ -2855,11 +3094,34 @@ export default function MemoryPalaceApp() {
                             </span>
                         </label>
 
+                        <div>
+                            <label className={labelClass}>PROVIDER</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {PROVIDER_OPTIONS.map(opt => {
+                                    const isActive = rrProvider === opt.id;
+                                    return (
+                                        <button key={opt.id} onClick={() => applyRerankProvider(opt.id)} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8,
+                                            padding: '10px 14px', borderRadius: 12, fontSize: 12,
+                                            border: isActive ? `2px solid ${opt.color}` : '1px solid #e5e7eb',
+                                            background: isActive ? `${opt.color}11` : 'white',
+                                            cursor: 'pointer', textAlign: 'left', width: '100%',
+                                        }}>
+                                            <span style={{ fontWeight: 700, fontSize: 11, color: opt.color, whiteSpace: 'nowrap' }}>{opt.label}</span>
+                                            <span style={{ fontSize: 10, color: '#6b7280' }}>{opt.id === 'openrouter' ? 'Rerank Key 不单独填写，使用 Embedding Key' : opt.desc}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         {/* 一键同步 embedding 服务商 */}
                         <button
                             onClick={() => {
-                                setRrUrl(embUrl.trim());
-                                setRrKey(embKey.trim());
+                                setRrProvider(embProvider);
+                                setRrUrl(embProvider === 'openrouter' ? OPENROUTER_BASE_URL : embUrl.trim());
+                                setRrKey(embProvider === 'openrouter' ? '' : embKey.trim());
+                                if (embProvider === 'openrouter') setRrModel(OPENROUTER_RERANK_MODEL);
                             }}
                             disabled={!embUrl.trim() || !embKey.trim()}
                             style={{
@@ -2891,23 +3153,28 @@ export default function MemoryPalaceApp() {
 
                         <div>
                             <label className={labelClass}>API KEY</label>
-                            <input
-                                type="password"
-                                value={rrKey}
-                                onChange={e => setRrKey(e.target.value)}
-                                placeholder="sk-..."
-                                className={inputClass}
-                            />
+                            {rrProvider === 'openrouter' ? (
+                                <div style={{
+                                    padding: '10px 12px', borderRadius: 12, border: '1px solid #bfdbfe',
+                                    background: '#eff6ff', color: '#1d4ed8', fontSize: 12, fontWeight: 700,
+                                }}>
+                                    OpenRouter Rerank は上方 Embedding Key を使用します。
+                                </div>
+                            ) : (
+                                <input
+                                    type="password"
+                                    value={rrKey}
+                                    onChange={e => setRrKey(e.target.value)}
+                                    placeholder="sk-..."
+                                    className={inputClass}
+                                />
+                            )}
                         </div>
 
                         <div>
                             <label className={labelClass}>RERANK 模型</label>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                                {[
-                                    { model: 'BAAI/bge-reranker-v2-m3', tag: '推荐', desc: '多语言 cross-encoder，中文强，免费额度大', color: '#0369a1' },
-                                    { model: 'Pro/BAAI/bge-reranker-v2-m3', tag: 'Pro 版', desc: '加速推理，延迟更低，按量计费', color: '#f59e0b' },
-                                    { model: 'netease-youdao/bce-reranker-base_v1', tag: '免费', desc: '网易有道 BCE，中文专精', color: '#10b981' },
-                                ].map(opt => {
+                                {(RERANK_PRESETS[rrProvider] || RERANK_PRESETS['openai-compatible']).map(opt => {
                                     const isActive = rrModel === opt.model;
                                     return (
                                         <button key={opt.model} onClick={() => setRrModel(opt.model)} style={{
@@ -2926,8 +3193,50 @@ export default function MemoryPalaceApp() {
                                     );
                                 })}
                             </div>
+                            <button
+                                onClick={handleFetchRerankModels}
+                                disabled={rrModelsLoading || (rrProvider === 'openrouter' && !embKey.trim())}
+                                style={{
+                                    width: '100%',
+                                    marginBottom: 8,
+                                    padding: '9px 0',
+                                    borderRadius: 12,
+                                    border: '1px solid #0369a133',
+                                    background: (rrModelsLoading || (rrProvider === 'openrouter' && !embKey.trim())) ? '#f1f5f9' : 'white',
+                                    color: (rrModelsLoading || (rrProvider === 'openrouter' && !embKey.trim())) ? '#94a3b8' : '#0369a1',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: (rrModelsLoading || (rrProvider === 'openrouter' && !embKey.trim())) ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                {rrModelsLoading ? '取り入れ中...' : 'Rerank 候选を取り入れ'}
+                            </button>
+                            {rrModelsResult && (
+                                <div style={{
+                                    marginBottom: 8, fontSize: 11, padding: '7px 10px', borderRadius: 8,
+                                    background: rrModelsResult.startsWith('[ok]') ? '#f0fdf4' : '#fef2f2',
+                                    color: rrModelsResult.startsWith('[ok]') ? '#16a34a' : '#dc2626',
+                                }}>
+                                    <StatusMessage msg={rrModelsResult} />
+                                </div>
+                            )}
+                            {rrModelOptions.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                                    {rrModelOptions.map(opt => (
+                                        <button key={opt.id} onClick={() => setRrModel(opt.id)} style={{
+                                            padding: '8px 10px', borderRadius: 10, fontSize: 11,
+                                            border: rrModel === opt.id ? '2px solid #0369a1' : '1px solid #e5e7eb',
+                                            background: rrModel === opt.id ? '#0369a111' : 'white',
+                                            color: '#1f2937', cursor: 'pointer', textAlign: 'left',
+                                        }}>
+                                            <span style={{ fontWeight: 700 }}>{opt.id}</span>
+                                            {opt.name && opt.name !== opt.id && <span style={{ color: '#64748b', marginLeft: 6 }}>{opt.name}</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <div style={{ fontSize: 10, color: '#9ca3af', paddingLeft: 4, marginBottom: 4 }}>
-                                或手动输入（支持任何遵循 Cohere/Jina 协议的 /rerank 端点）
+                                或手动输入（OpenRouter 默认 cohere/rerank-v3.5；其他 provider 支持 Cohere/Jina 协议）
                             </div>
                             <input
                                 type="text"
@@ -2968,13 +3277,13 @@ export default function MemoryPalaceApp() {
                     {/* 测试 rerank 连接 */}
                     <button
                         onClick={async () => {
-                            if (!rrUrl.trim() || !rrKey.trim()) return;
+                            if (!effectiveRerankUrl || !effectiveRerankKey) return;
                             setRrTesting(true);
                             setRrTestResult(null);
                             try {
                                 const { rerankDocuments } = await import('../utils/memoryPalace/rerank');
                                 const results = await rerankDocuments(
-                                    { baseUrl: rrUrl.trim(), apiKey: rrKey.trim(), model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3' },
+                                    { provider: rrProvider, baseUrl: effectiveRerankUrl, apiKey: effectiveRerankKey, model: rrModel.trim() || (rrProvider === 'openrouter' ? OPENROUTER_RERANK_MODEL : 'BAAI/bge-reranker-v2-m3') },
                                     '测试问题：外公身体怎么样',
                                     ['外公前几天去医院做了心脏检查，结果正常', '今天下雨了，路上有点堵', '她最喜欢吃妈妈做的红烧肉'],
                                     3,
@@ -2990,7 +3299,7 @@ export default function MemoryPalaceApp() {
                                 setRrTesting(false);
                             }
                         }}
-                        disabled={rrTesting || !rrUrl.trim() || !rrKey.trim()}
+                        disabled={rrTesting || !effectiveRerankUrl || !effectiveRerankKey}
                         style={{
                             width: '100%', marginTop: 8, padding: '10px 0',
                             borderRadius: 12, border: '1px solid #0369a144',

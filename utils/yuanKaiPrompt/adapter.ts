@@ -72,6 +72,9 @@ export function adaptSuKaiPromptContext(input: AdaptSuKaiPromptInput): YuanKaiPr
             apiHistoryMessageCount: input.apiHistoryMessageCount,
             activeBlocks: collectActiveBlocks(input.flags),
             emojiNames: input.emojiNames.slice(0, 80),
+            chatStatusText: preview(input.char.chatStatus?.text, 32),
+            chatStatusIsBusy: input.char.chatStatus?.isBusy === true,
+            latestThought: preview(input.innerState, 120),
         },
         legacySystemPrompt: input.legacySystemPrompt.trim(),
     };

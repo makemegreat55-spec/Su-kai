@@ -163,6 +163,19 @@ export interface APIConfig {
   minimaxRegion?: MinimaxRegion;
   // Replicate token (r8_xxx) for ACE-Step song generation in 写歌 App.
   aceStepApiKey?: string;
+  // NovelAI image generation for chat auto illustrations.
+  novelAiApiKey?: string;
+  novelAiModel?: string;
+  novelAiEnabled?: boolean;
+  novelAiResolution?: string;
+  novelAiSteps?: number;
+  novelAiCfgScale?: number;
+  novelAiSampler?: string;
+  novelAiSeed?: number;
+  novelAiUcPreset?: number;
+  novelAiPositivePrompt?: string;
+  novelAiNegativePrompt?: string;
+  autoIllustrationEnabled?: boolean;
   model: string;
   // Per-API streaming toggle. Some endpoints only support stream:true.
   // Missing → false (默认非流式).
@@ -372,7 +385,9 @@ export interface HotNewsSnapshot {
 
 export interface MemoryPalaceBackupConfig {
   embedding: {
+    provider?: 'openai-compatible' | 'openrouter' | 'custom';
     baseUrl: string;
+    modelsUrl?: string;
     apiKey: string;
     model: string;
     dimensions: number;
@@ -384,7 +399,9 @@ export interface MemoryPalaceBackupConfig {
   };
   rerank: {
     enabled: boolean;
+    provider?: 'openai-compatible' | 'openrouter' | 'custom';
     baseUrl: string;
+    modelsUrl?: string;
     apiKey: string;
     model: string;
     topN: number;
@@ -1768,7 +1785,9 @@ export interface CharacterProfile {
    */
   autoArchiveEnabled?: boolean;
   embeddingConfig?: {
+    provider?: 'openai-compatible' | 'openrouter' | 'custom';
     baseUrl: string;
+    modelsUrl?: string;
     apiKey: string;
     model: string;        // 默认 text-embedding-3-small
     dimensions: number;   // 默认 1024

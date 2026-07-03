@@ -1,11 +1,22 @@
 /**
  * Memory Palace — Embedding 服务
  *
- * 调用 OpenAI 兼容的 Embedding API，将文本转为向量。
- * 支持硅基流动 / 阿里云 / 字节等端点。
+ * 调用 Embedding API，将文本转为向量。
+ * 支持硅基流动 / 阿里云 / 字节等 OpenAI-compatible 端点，以及 OpenRouter。
  */
 
 import type { EmbeddingConfig } from './types';
+import { fetchProviderJson } from './providerFetch';
+import {
+    getEmbeddingModelsUrl,
+    getEmbeddingUrl,
+    isNetworkFetchError,
+    normalizeApiKey,
+    normalizeEmbeddingConfig,
+    normalizeModelList,
+    OPENROUTER_EMBEDDING_MODELS,
+    type ProviderModelOption,
+} from './providerConfig';
 
 // ─── 核心 API 调用 ────────────────────────────────────
 
@@ -63,7 +74,7 @@ export async function getEmbeddings(texts: string[], config: EmbeddingConfig): P
  * 服务端拒绝（2026-06 起返回 500）。这里只给支持的模型带上该参数。
  */
 function modelSupportsDimensions(model: string): boolean {
-    return /qwen3?-?embedding/i.test(model);
+    return /qwen3?-?embedding|text-embedding-3/i.test(model);
 }
 
 /**
@@ -72,37 +83,29 @@ function modelSupportsDimensions(model: string): boolean {
 async function callEmbeddingAPI(
     input: string[], config: EmbeddingConfig, retryCount: number = 0
 ): Promise<number[][]> {
-    // 自动修正常见 URL 错误
-    let baseUrl = config.baseUrl.replace(/\/+$/, '');
-    baseUrl = baseUrl.replace('ai.siliconflow.cn', 'api.siliconflow.cn');
-    const url = `${baseUrl}/embeddings`;
+    const normalized = normalizeEmbeddingConfig(config);
+    const url = getEmbeddingUrl(normalized);
 
     const body: Record<string, unknown> = {
-        model: config.model,
+        model: normalized.model,
         input,
         encoding_format: 'float',
     };
     // 仅在模型支持时才发送 dimensions，否则 bge 等固定维度模型会报 500
-    if (modelSupportsDimensions(config.model) && config.dimensions) {
-        body.dimensions = config.dimensions;
+    if (modelSupportsDimensions(normalized.model) && normalized.dimensions) {
+        body.dimensions = normalized.dimensions;
     }
 
     try {
-        const response = await fetch(url, {
+        const data = await fetchProviderJson({
+            url,
+            apiKey: normalized.apiKey,
+            label: 'Embedding',
+            config: normalized,
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.apiKey}`,
-            },
-            body: JSON.stringify(body),
+            bodyText: JSON.stringify(body),
+            retries: 0,
         });
-
-        if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            throw new Error(`Embedding API error ${response.status}: ${errorText}`);
-        }
-
-        const data = await response.json();
 
         if (!data.data || !Array.isArray(data.data)) {
             throw new Error(`Embedding API returned unexpected format: ${JSON.stringify(data).slice(0, 200)}`);
@@ -111,16 +114,61 @@ async function callEmbeddingAPI(
         // OpenAI 格式: data[].embedding[]
         // 按 index 排序确保顺序正确
         const sorted = [...data.data].sort((a: any, b: any) => a.index - b.index);
-        return sorted.map((item: any) => item.embedding as number[]);
+        const vectors = sorted.map((item: any) => item.embedding as number[]);
+        if (
+            vectors.length !== input.length
+            || vectors.some(vector => !Array.isArray(vector) || vector.length === 0 || vector.some(value => typeof value !== 'number'))
+        ) {
+            throw new Error('Embedding API returned invalid vector shape');
+        }
+        return vectors;
 
     } catch (err: any) {
         // 重试一次
         if (retryCount < 1) {
-            console.warn(`⚡ [Embedding] Retry after error: ${err.message}`);
             await new Promise(r => setTimeout(r, 1000));
             return callEmbeddingAPI(input, config, retryCount + 1);
         }
         throw err;
+    }
+}
+
+export async function fetchEmbeddingModels(config: EmbeddingConfig): Promise<{
+    provider: EmbeddingConfig['provider'];
+    url: string;
+    models: ProviderModelOption[];
+    fallback: boolean;
+}> {
+    const normalized = normalizeEmbeddingConfig({
+        ...config,
+        apiKey: normalizeApiKey(config.apiKey),
+    });
+    const url = getEmbeddingModelsUrl(normalized);
+    if (!normalized.apiKey) throw new Error('Embedding model list API is missing an API key');
+
+    try {
+        const data = await fetchProviderJson({
+            url,
+            apiKey: normalized.apiKey,
+            label: 'Embedding model list',
+            config: normalized,
+            method: 'GET',
+            retries: 0,
+        });
+        const models = normalizeModelList(data, 'embedding');
+        if (models.length === 0) throw new Error('Embedding model list returned no usable models');
+        return { provider: normalized.provider, url, models, fallback: false };
+    } catch (error: any) {
+        const message = String(error?.message || error || '');
+        if (normalized.provider === 'openrouter' && (isNetworkFetchError(error) || /proxy unavailable|cors/i.test(message))) {
+            return {
+                provider: 'openrouter',
+                url,
+                models: OPENROUTER_EMBEDDING_MODELS,
+                fallback: true,
+            };
+        }
+        throw error;
     }
 }
 
