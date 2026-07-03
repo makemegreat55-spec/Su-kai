@@ -1660,6 +1660,14 @@ export interface CharacterProfile {
 
   mountedWorldbooks?: { id: string; title: string; content: string; category?: string }[];
 
+  importedCardMeta?: {
+      sourceFormat: 'sully' | 'sillytavern-v2' | 'tavernai-v1';
+      sourceFileName?: string;
+      importedAt: number;
+      firstMessage?: string;
+      tags?: string[];
+  };
+
   impression?: UserImpression;
 
   bubbleStyle?: string;
