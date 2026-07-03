@@ -33,3 +33,5 @@ xiaohongshu-skills/
 
 # git worktrees
 .worktrees/
+.vercel
+.env*
