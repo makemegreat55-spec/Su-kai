@@ -7,12 +7,13 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import type { PixelRoomLayout, PlacedFurniture, PixelAsset } from './types';
+import type { PixelRoomLayout, PlacedFurniture, PixelAsset, PixelLifeEvent, PixelLifeState } from './types';
 import { decodeColorField } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import type { MemoryNode } from '../../utils/memoryPalace/types';
 import { ROOM_SLOTS, ROOM_META, ROOM_SIZES } from './roomTemplates';
 import { PixelLayoutDB } from './pixelHomeDb';
+import PixelLifeLogOverlay from './PixelLifeLogOverlay';
 import { MemoryNodeDB } from '../../utils/memoryPalace/db';
 import { processImage } from '../../utils/file';
 import { pixelizeImage, removeBackground } from '../../utils/pixelizer';
@@ -25,6 +26,8 @@ interface Props {
   roomId: MemoryRoom;
   layout: PixelRoomLayout;
   assets: PixelAsset[];
+  lifeState?: PixelLifeState | null;
+  lifeEvents?: PixelLifeEvent[];
   onUpdate: () => void;
   onOpenLibrary: (slotId: string | null) => void;
 }
@@ -78,7 +81,19 @@ function isRugAsset(f: PlacedFurniture, assets: PixelAsset[]): boolean {
   return !!asset?.tags?.includes('rug');
 }
 
-const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary }) => {
+const PixelRoomEditor: React.FC<Props> = ({
+  charId,
+  charName,
+  charSprite,
+  userName,
+  roomId,
+  layout,
+  assets,
+  lifeState,
+  lifeEvents = [],
+  onUpdate,
+  onOpenLibrary,
+}) => {
   const [furniture, setFurniture] = useState<PlacedFurniture[]>(layout.furniture);
   const [wallColor, setWallColor] = useState(layout.wallColor);
   const [floorColor, setFloorColor] = useState(layout.floorColor);
@@ -615,7 +630,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
 
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: '#1a1410' }}>
-      <div ref={outerRef} className="flex-1 overflow-hidden flex items-center justify-center"
+      <div ref={outerRef} className="relative flex-1 overflow-hidden flex items-center justify-center"
         style={{ touchAction: 'none' }}
         onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
         onClick={() => { if (!draggingRef.current) setSelectedSlot(null); }}>
@@ -833,6 +848,12 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
 
           </div>
         </div>
+        <PixelLifeLogOverlay
+          events={lifeEvents}
+          lifeState={lifeState || null}
+          userName={userName}
+          variant="room"
+        />
       </div>
 
       {/* 底部工具栏 */}

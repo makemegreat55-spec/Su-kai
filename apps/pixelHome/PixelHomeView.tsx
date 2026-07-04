@@ -12,10 +12,10 @@ import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { getOrCreateHomeState, PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
 import { ROOM_META } from './roomTemplates';
 import { downloadPreset, importPreset, readFileAsText } from './presetManager';
-import { getPixelLifeActionLabel } from './lifeSim';
 import { runPixelLifeCatchup } from './lifeSimDb';
 import PixelHomeMap from './PixelHomeMap';
 import PixelRoomEditor from './PixelRoomEditor';
+import PixelLifeLogOverlay from './PixelLifeLogOverlay';
 import PixelAssetGenerator from './PixelAssetGenerator';
 import AssetLibrary from './AssetLibrary';
 import PixelCharEditor from './PixelCharEditor';
@@ -316,14 +316,15 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
                 setHomeState(prev => prev ? { ...prev, theme } : prev);
                 try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
               }} />
-            <LifeLogPanel events={lifeEvents} lifeState={lifeState} userName={userName} />
+            <PixelLifeLogOverlay events={lifeEvents} lifeState={lifeState} userName={userName} variant="map" />
           </div>
         )}
         {viewMode === 'room' && (
           <PixelRoomEditor charId={charId} charName={charName}
             charSprite={pixelCharSprite || charAvatar} userName={userName}
             roomId={selectedRoom} layout={homeState.rooms.find(r => r.roomId === selectedRoom)!}
-            assets={assets} onUpdate={handleRoomUpdate} onOpenLibrary={handleOpenLibrary} />
+            assets={assets} lifeState={lifeState} lifeEvents={lifeEvents}
+            onUpdate={handleRoomUpdate} onOpenLibrary={handleOpenLibrary} />
         )}
         {viewMode === 'charEditor' && (
           <PixelCharEditor
@@ -375,61 +376,6 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         </div>
       )}
     </div>
-  );
-};
-
-const formatLifeEventTime = (timestamp: number) => {
-  try {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '--:--';
-  }
-};
-
-const LifeLogPanel: React.FC<{
-  events: PixelLifeEvent[];
-  lifeState: PixelLifeState | null;
-  userName: string;
-}> = ({ events, lifeState, userName }) => {
-  const visibleEvents = [...events].sort((a, b) => b.timestamp - a.timestamp).slice(0, 4);
-  const roomName = (roomId: MemoryRoom) => roomId === 'user_room' ? `${userName}的房` : ROOM_META[roomId]?.name || roomId;
-  const currentText = lifeState
-    ? `${roomName(lifeState.currentPlaceId)} · ${getPixelLifeActionLabel(lifeState.currentActionType)}`
-    : '正在醒来';
-
-  return (
-    <section className="absolute left-3 right-3 bottom-3 z-[60] max-h-40 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-2xl backdrop-blur-md">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-bold tracking-wide text-slate-100">今日的生活日志</div>
-          <div className="mt-0.5 text-[10px] text-slate-400 truncate">现在：{currentText}</div>
-        </div>
-        {visibleEvents.some(e => e.memoryCandidate) && (
-          <span className="shrink-0 rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-bold text-amber-200">
-            记忆候选
-          </span>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
-        {visibleEvents.length === 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-300">
-            今天还在慢慢开始。
-          </div>
-        )}
-        {visibleEvents.map(event => (
-          <div key={event.id}
-            className={`rounded-xl border px-3 py-2 ${event.memoryCandidate ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/5'}`}>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400">
-              <span className="tabular-nums">{formatLifeEventTime(event.timestamp)}</span>
-              <span>{roomName(event.placeId)}</span>
-              <span className="min-w-0 flex-1 truncate font-bold text-slate-200">{event.title}</span>
-            </div>
-            <div className="mt-0.5 truncate text-[10px] leading-4 text-slate-300">{event.summary}</div>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 };
 
