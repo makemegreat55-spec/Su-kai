@@ -116,6 +116,85 @@ export interface PixelHomeState {
   theme?: PixelHomeTheme;
 }
 
+// ─── Seeded pixel city blocks ─────────────────────────
+
+export type PixelCityTheme = 'modern' | 'school' | 'entertainment' | 'magic' | 'noir';
+
+export type PixelCityPlaceType =
+  | 'home'
+  | 'street'
+  | 'cafe'
+  | 'park'
+  | 'station'
+  | 'workplace'
+  | 'school'
+  | 'shop'
+  | 'special';
+
+export type PixelCityPlaceId = `city_${string}`;
+export type PixelLifePlaceId = MemoryRoom | PixelCityPlaceId;
+
+export interface PixelCityDistrict {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PixelCityPlace {
+  id: PixelCityPlaceId;
+  type: PixelCityPlaceType;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  connectedPlaceIds: PixelCityPlaceId[];
+  tags?: string[];
+  description?: string;
+  characterAffinity?: number;
+}
+
+export interface PixelCityRoad {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  kind: 'main' | 'side';
+}
+
+export interface PixelCityObject {
+  id: string;
+  type: 'tree' | 'lamp' | 'bench' | 'sign' | 'flower' | 'vendor';
+  x: number;
+  y: number;
+}
+
+export interface PixelCityTile {
+  x: number;
+  y: number;
+  kind: 'grass' | 'road' | 'plaza' | 'water' | 'building';
+}
+
+export interface PixelCityMapState {
+  cityId: string;
+  charId: string;
+  seed: string;
+  theme: PixelCityTheme;
+  generatedAt: number;
+  width: number;
+  height: number;
+  tileSize: number;
+  districts: PixelCityDistrict[];
+  places: PixelCityPlace[];
+  roads: PixelCityRoad[];
+  placedObjects: PixelCityObject[];
+  tiles: PixelCityTile[];
+}
+
 // ─── 轻量生活模拟 ─────────────────────────────────────
 
 export type PixelLifeActionType =
@@ -135,7 +214,7 @@ export interface PixelLifeEvent {
   charId: string;
   timestamp: number;
   dayKey: string;
-  placeId: MemoryRoom;
+  placeId: PixelLifePlaceId;
   actionType: PixelLifeActionType;
   title: string;
   summary: string;
@@ -150,7 +229,7 @@ export interface PixelLifeEvent {
 
 export interface PixelLifeState {
   charId: string;
-  currentPlaceId: MemoryRoom;
+  currentPlaceId: PixelLifePlaceId;
   currentActionType: PixelLifeActionType;
   mood: number;
   energy: number;
@@ -199,7 +278,7 @@ export interface DecorationDiff {
 
 // ─── 视图状态 ─────────────────────────────────────────
 
-export type PixelHomeViewMode = 'map' | 'room' | 'generator' | 'library' | 'charEditor' | 'dive';
+export type PixelHomeViewMode = 'map' | 'city' | 'room' | 'generator' | 'library' | 'charEditor' | 'dive';
 
 // ─── 房屋预设（导入/导出）─────────────────────────────
 

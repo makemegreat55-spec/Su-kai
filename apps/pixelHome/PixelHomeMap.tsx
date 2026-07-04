@@ -20,6 +20,7 @@ interface Props {
   userName: string;
   lifeState?: PixelLifeState | null;
   onEnterRoom: (roomId: MemoryRoom) => void;
+  onEnterCity?: () => void;
   /** 修改全局主题色（外围墙体/背景）。父层负责落盘。 */
   onUpdateTheme?: (theme: PixelHomeTheme) => void;
 }
@@ -65,7 +66,7 @@ const WALL_BORDER_FALLBACK = DEFAULT_HOME_THEME.wallBorder;
 const WALL_BORDER_LIGHT_FALLBACK = DEFAULT_HOME_THEME.wallBorderLight;
 const BG_COLOR_FALLBACK = DEFAULT_HOME_THEME.bgColor;
 
-const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, lifeState, onEnterRoom, onUpdateTheme }) => {
+const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, lifeState, onEnterRoom, onEnterCity, onUpdateTheme }) => {
   const theme = homeState.theme || DEFAULT_HOME_THEME;
   const WALL_BORDER = theme.wallBorder || WALL_BORDER_FALLBACK;
   const WALL_BORDER_LIGHT = theme.wallBorderLight || WALL_BORDER_LIGHT_FALLBACK;
@@ -91,6 +92,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
   const activeLifeRoomIdx = lifeState?.currentPlaceId
     ? FLOOR_PLAN.findIndex(room => room.roomId === lifeState.currentPlaceId)
     : -1;
+  const isLifeInCity = Boolean(lifeState?.currentPlaceId && activeLifeRoomIdx < 0);
   const currentActionLabel = lifeState ? getPixelLifeActionLabel(lifeState.currentActionType) : '';
 
   useEffect(() => {
@@ -137,6 +139,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
     // 每隔 12~20 秒有概率换个房间；避免永远只待在客厅
     const roomSwitchTimer = setInterval(() => {
       if (activeLifeRoomIdx >= 0) return;
+      if (isLifeInCity) return;
       if (Math.random() < 0.55) {
         const nextIdx = Math.floor(Math.random() * FLOOR_PLAN.length);
         charPosRef.current = { x: 50, y: 60 };
@@ -146,7 +149,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
     }, 12000 + Math.random() * 8000);
 
     return () => { clearInterval(stepTimer); clearInterval(targetTimer); clearInterval(roomSwitchTimer); };
-  }, [activeLifeRoomIdx]);
+  }, [activeLifeRoomIdx, isLifeInCity]);
 
   // wheel
   useEffect(() => {
@@ -254,6 +257,19 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* 街区入口：放在地图角落，避免挤占底部工具栏。 */}
+      {onEnterCity && (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onEnterCity(); }}
+          onPointerDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+          className="absolute left-2 top-2 z-50 rounded-xl border border-emerald-200/25 bg-emerald-950/80 px-3 py-1.5 text-[10px] font-bold text-emerald-100 shadow-xl backdrop-blur-md transition-transform active:scale-95"
+        >
+          街へ
+        </button>
+      )}
+
       {/* 主题面板按钮（可修改外围墙体 + 画布背景色）——只在有回调时出现 */}
       {onUpdateTheme && (
         <>
@@ -440,7 +456,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                 </div>
 
                 {/* 角色小人（像素步行） */}
-                {idx === charPos.roomIdx && charSprite && (
+                {!isLifeInCity && idx === charPos.roomIdx && charSprite && (
                   <div className="absolute z-40 pointer-events-none"
                     style={{
                       left: `${charPos.x}%`, top: `${charPos.y}%`,

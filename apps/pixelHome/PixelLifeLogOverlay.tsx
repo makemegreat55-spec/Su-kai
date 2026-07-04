@@ -1,14 +1,15 @@
 import React, { useMemo, useRef, useState } from 'react';
-import type { MemoryRoom } from '../../utils/memoryPalace/types';
-import type { PixelLifeEvent, PixelLifeState } from './types';
+import type { PixelCityMapState, PixelLifeEvent, PixelLifePlaceId, PixelLifeState } from './types';
 import { getPixelLifeActionLabel } from './lifeSim';
 import { ROOM_META } from './roomTemplates';
+import { getPixelCityPlaceName } from './cityGenerator';
 
 interface PixelLifeLogOverlayProps {
   events: PixelLifeEvent[];
   lifeState: PixelLifeState | null;
   userName: string;
   variant: 'map' | 'room';
+  city?: PixelCityMapState | null;
 }
 
 const formatLifeEventTime = (timestamp: number) => {
@@ -19,16 +20,20 @@ const formatLifeEventTime = (timestamp: number) => {
   }
 };
 
-const getRoomName = (roomId: MemoryRoom, userName: string) =>
-  roomId === 'user_room' ? `${userName}的房` : ROOM_META[roomId]?.name || roomId;
+const getPlaceName = (placeId: PixelLifePlaceId, userName: string, city?: PixelCityMapState | null) => {
+  if (placeId === 'user_room') return `${userName}的房`;
+  if (placeId in ROOM_META) return ROOM_META[placeId as keyof typeof ROOM_META]?.name || placeId;
+  return getPixelCityPlaceName(placeId, city);
+};
 
 const LifeLogPanelBody: React.FC<{
   visibleEvents: PixelLifeEvent[];
   currentText: string;
   hasMemoryCandidate: boolean;
   userName: string;
+  city?: PixelCityMapState | null;
   trailingAction?: React.ReactNode;
-}> = ({ visibleEvents, currentText, hasMemoryCandidate, userName, trailingAction }) => (
+}> = ({ visibleEvents, currentText, hasMemoryCandidate, userName, city, trailingAction }) => (
   <>
     <div className="mb-2 flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -58,7 +63,7 @@ const LifeLogPanelBody: React.FC<{
         >
           <div className="flex items-center gap-2 text-[10px] text-slate-400">
             <span className="tabular-nums">{formatLifeEventTime(event.timestamp)}</span>
-            <span>{getRoomName(event.placeId, userName)}</span>
+            <span>{getPlaceName(event.placeId, userName, city)}</span>
             <span className="min-w-0 flex-1 truncate font-bold text-slate-200">{event.title}</span>
           </div>
           <div className="mt-0.5 truncate text-[10px] leading-4 text-slate-300">{event.summary}</div>
@@ -73,6 +78,7 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
   lifeState,
   userName,
   variant,
+  city,
 }) => {
   const [collapsed, setCollapsed] = useState(variant === 'room');
   const lastToggleAtRef = useRef(0);
@@ -81,7 +87,7 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
     [events, variant],
   );
   const currentText = lifeState
-    ? `${getRoomName(lifeState.currentPlaceId, userName)} · ${getPixelLifeActionLabel(lifeState.currentActionType)}`
+    ? `${getPlaceName(lifeState.currentPlaceId, userName, city)} · ${getPixelLifeActionLabel(lifeState.currentActionType)}`
     : '正在醒来';
   const hasMemoryCandidate = visibleEvents.some(event => event.memoryCandidate);
 
@@ -140,6 +146,7 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
             currentText={currentText}
             hasMemoryCandidate={hasMemoryCandidate}
             userName={userName}
+            city={city}
           />
         </section>
       </>
@@ -178,6 +185,7 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
         currentText={currentText}
         hasMemoryCandidate={hasMemoryCandidate}
         userName={userName}
+        city={city}
         trailingAction={
           <button
             type="button"

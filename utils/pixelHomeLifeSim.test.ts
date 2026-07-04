@@ -6,6 +6,7 @@ import {
   shouldPromoteLifeEventToMemory,
   simulatePixelLifeCatchup,
 } from '../apps/pixelHome/lifeSim';
+import { PIXEL_CITY_PLACE_IDS } from '../apps/pixelHome/cityGenerator';
 import type { PixelLifeEvent } from '../apps/pixelHome/types';
 
 const char = {
@@ -97,5 +98,44 @@ describe('pixel home life simulation', () => {
 
     expect(result.events[0].importance).toBeGreaterThanOrEqual(7);
     expect(result.events[0].memoryCandidate).toBe(true);
+  });
+
+  it('昼の候補に外出イベントが入る', () => {
+    const state = createDefaultPixelLifeState(char.id, atHour(13));
+    const candidate = selectPixelLifeEventCandidate({
+      char,
+      state,
+      timestamp: atHour(13),
+      rng: () => 0.6,
+    });
+
+    expect(candidate.placeId).toBe(PIXEL_CITY_PLACE_IDS.workplace);
+    expect(candidate.importance).toBeLessThan(7);
+    expect(shouldPromoteLifeEventToMemory(candidate.importance, candidate.memoryCandidate)).toBe(false);
+  });
+
+  it('街区の重要イベントは記憶候補になる', () => {
+    const now = atHour(19);
+    const result = simulatePixelLifeCatchup({
+      char,
+      state: {
+        ...createDefaultPixelLifeState(char.id, now),
+        lastSimulatedAt: now - PIXEL_LIFE_DEFAULT_STEP_MS,
+      },
+      now,
+      rng: () => 0.99,
+    });
+
+    expect(result.events[0].placeId).toBe(PIXEL_CITY_PLACE_IDS.special);
+    expect(result.events[0].importance).toBeGreaterThanOrEqual(7);
+    expect(result.events[0].memoryCandidate).toBe(true);
+  });
+
+  it('既存の家内イベントも壊れない', () => {
+    const state = createDefaultPixelLifeState(char.id, atHour(8));
+    const candidate = selectPixelLifeEventCandidate({ char, state, timestamp: atHour(8), rng: () => 0 });
+
+    expect(candidate.placeId).toBe('bedroom');
+    expect(candidate.actionType).toBe('wake');
   });
 });

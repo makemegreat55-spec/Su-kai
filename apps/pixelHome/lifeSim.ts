@@ -5,15 +5,17 @@ import type {
   PixelLifeActionType,
   PixelLifeEvent,
   PixelLifeMemoryCandidate,
+  PixelLifePlaceId,
   PixelLifeState,
 } from './types';
+import { getPixelCityPlaceName, PIXEL_CITY_PLACE_IDS } from './cityGenerator';
 
 export type PixelLifeTimeBand = 'morning' | 'day' | 'evening' | 'night';
 
 type LifeCharProfile = Pick<CharacterProfile, 'id' | 'name' | 'description' | 'systemPrompt' | 'worldview'>;
 
 interface LifeCandidate {
-  placeId: MemoryRoom;
+  placeId: PixelLifePlaceId;
   actionType: PixelLifeActionType;
   title: string;
   summary: string;
@@ -47,6 +49,7 @@ export const PIXEL_LIFE_MEMORY_IMPORTANCE_THRESHOLD = 7;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const clampStat = (value: number) => clamp(Math.round(value), 0, 100);
 const clampImportance = (value: number) => clamp(Math.round(value), 1, 10);
+const isMemoryRoom = (placeId: PixelLifePlaceId): placeId is MemoryRoom => placeId in ROOM_META;
 
 export const getPixelLifeDayKey = (timestamp: number = Date.now()): string => {
   const date = new Date(timestamp);
@@ -170,6 +173,15 @@ const getBaseCandidates = (
         energyDelta: -3,
         importance: 4,
       },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.station,
+        actionType: 'work',
+        title: '出门看一眼天气',
+        summary: `${char.name}走到站前，确认今天外面的节奏。`,
+        moodDelta: 1,
+        energyDelta: -2,
+        importance: 4,
+      },
     );
   } else if (band === 'day') {
     candidates.push(
@@ -199,6 +211,33 @@ const getBaseCandidates = (
         socialDelta: 6,
         energyDelta: -2,
         importance: 5,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.workplace,
+        actionType: persona.job === '学习' ? 'study' : 'work',
+        title: `去${persona.job}的地方`,
+        summary: `${char.name}离开家，去街区里处理一段${persona.job}。`,
+        energyDelta: -7,
+        moodDelta: 1,
+        importance: 5,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.cafe,
+        actionType: 'rest',
+        title: '咖啡店短休',
+        summary: `${char.name}在咖啡店坐了一会儿，让思绪慢慢落地。`,
+        moodDelta: 3,
+        energyDelta: 3,
+        importance: 5,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.park,
+        actionType: 'reflect',
+        title: '公园散步',
+        summary: `${char.name}沿着小公园走了一圈，心里有些话没有急着说出口。`,
+        moodDelta: 2,
+        energyDelta: -2,
+        importance: 6,
       },
     );
   } else if (band === 'evening') {
@@ -230,6 +269,33 @@ const getBaseCandidates = (
         energyDelta: -3,
         importance: 4,
       },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.shop,
+        actionType: 'meal',
+        title: '买了点饮料',
+        summary: `${char.name}顺路买了点喝的，把傍晚带回家。`,
+        moodDelta: 2,
+        energyDelta: 2,
+        importance: 4,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.cafe,
+        actionType: 'social',
+        title: '街角小坐',
+        summary: `${char.name}在街角停留了一阵，像是在等一句合适的话。`,
+        socialDelta: 4,
+        moodDelta: 2,
+        importance: 6,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.special,
+        actionType: 'reflect',
+        title: '绕去特别的地方',
+        summary: `${char.name}绕到那个很像自己的地方，心情留下了一点痕迹。`,
+        moodDelta: 2,
+        energyDelta: -3,
+        importance: 7,
+      },
     );
   } else {
     candidates.push(
@@ -259,6 +325,15 @@ const getBaseCandidates = (
         moodDelta: -2,
         energyDelta: -1,
         importance: 7,
+      },
+      {
+        placeId: PIXEL_CITY_PLACE_IDS.station,
+        actionType: 'reflect',
+        title: '夜里的站前',
+        summary: `${char.name}在站前看了一会儿灯，觉得今天还没有完全结束。`,
+        moodDelta: 1,
+        energyDelta: -4,
+        importance: 6,
       },
     );
   }
@@ -411,17 +486,18 @@ export const buildPixelLifeMemoryCandidate = (
   charName: string,
 ): PixelLifeMemoryCandidate | null => {
   if (!event.memoryCandidate) return null;
-  const roomName = ROOM_META[event.placeId]?.name || event.placeId;
+  const room = isMemoryRoom(event.placeId) ? event.placeId : 'living_room';
+  const roomName = isMemoryRoom(event.placeId) ? ROOM_META[event.placeId].name : getPixelCityPlaceName(event.placeId);
   const actionLabel = getPixelLifeActionLabel(event.actionType);
   return {
     source: 'pixel-home-life',
     charId: event.charId,
     eventId: event.id,
     content: `${charName}在${roomName}${actionLabel}：${event.summary}`,
-    room: event.placeId,
+    room,
     importance: event.importance,
     mood: event.moodDelta && event.moodDelta < 0 ? '低落' : event.moodDelta && event.moodDelta > 0 ? '平稳变好' : '平稳',
-    tags: ['pixel-home', 'life-log', event.actionType],
+    tags: ['pixel-home', 'life-log', event.actionType, event.placeId],
     createdAt: event.timestamp,
   };
 };

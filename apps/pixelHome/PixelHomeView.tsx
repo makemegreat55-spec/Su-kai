@@ -7,13 +7,14 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../../context/OSContext';
-import type { PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture, PixelLifeEvent, PixelLifeState } from './types';
+import type { PixelCityMapState, PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture, PixelLifeEvent, PixelLifeState } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { getOrCreateHomeState, PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
 import { ROOM_META } from './roomTemplates';
 import { downloadPreset, importPreset, readFileAsText } from './presetManager';
 import { runPixelLifeCatchup } from './lifeSimDb';
 import PixelHomeMap from './PixelHomeMap';
+import PixelCityMap from './PixelCityMap';
 import PixelRoomEditor from './PixelRoomEditor';
 import PixelLifeLogOverlay from './PixelLifeLogOverlay';
 import PixelAssetGenerator from './PixelAssetGenerator';
@@ -23,6 +24,7 @@ import MemoryDiveMode from './MemoryDiveMode';
 import type { DiveResult } from './memoryDiveTypes';
 import type { PixelCharConfig } from './pixelCharGenerator';
 import { ensurePixelChar } from './pixelCharGenerator';
+import { getOrCreatePixelCity } from './pixelCityDb';
 import { DB } from '../../utils/db';
 
 // 内置角色的默认像素形象（用户未自定义时使用）
@@ -44,6 +46,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   const char = characters.find(c => c.id === charId);
   const [viewMode, setViewMode] = useState<PixelHomeViewMode>('map');
   const [homeState, setHomeState] = useState<PixelHomeState | null>(null);
+  const [pixelCity, setPixelCity] = useState<PixelCityMapState | null>(null);
   const [assets, setAssets] = useState<PixelAsset[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<MemoryRoom>('living_room');
   const [loading, setLoading] = useState(true);
@@ -89,7 +92,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           systemPrompt: char?.systemPrompt || '',
           worldview: char?.worldview,
         };
-        const [state, allAssets, savedChar, savedUser, savedTheme, lifeResult] = await Promise.all([
+        const [state, allAssets, savedChar, savedUser, savedTheme, city, lifeResult] = await Promise.all([
           getOrCreateHomeState(charId),
           PixelAssetDB.getAll(),
           DB.getAsset(`pixel_char_${charId}`),
@@ -97,6 +100,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           DB.getAsset(`pixel_char_user`),
           // 家园主题色按角色保存
           DB.getAsset(`pixel_home_theme_${charId}`),
+          getOrCreatePixelCity(simChar),
           runPixelLifeCatchup(simChar, { maxEvents: 6 }).catch(() => null),
         ]);
         if (!cancelled) {
@@ -105,6 +109,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             try { state.theme = JSON.parse(savedTheme); } catch {}
           }
           setHomeState(state);
+          setPixelCity(city);
           setAssets(allAssets);
           if (lifeResult) {
             setLifeState(lifeResult.state);
@@ -292,6 +297,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         <button
           onClick={() => {
             if (viewMode === 'map') { onBack(); return; }
+            if (viewMode === 'city') { setViewMode('map'); return; }
             // 仓库若是从房间中"添加/替换家具"进入的，应回到房间；其它（全局仓库/工坊/捏人/单房间编辑）一律回地图
             if (viewMode === 'library' && pendingSlotRef.current) {
               pendingSlotRef.current = null;
@@ -308,6 +314,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         </button>
         <span className="font-bold text-slate-200 text-sm tracking-wide">
           {viewMode === 'map' && `${charName}的家`}
+          {viewMode === 'city' && 'ピクセル街区'}
           {viewMode === 'room' && getRoomDisplayName(selectedRoom)}
           {viewMode === 'generator' && '像素工坊'}
           {viewMode === 'library' && (pendingSlotRef.current === '__add__' ? '选择要放置的家具' : pendingSlotRef.current ? '选择替换素材' : '仓库 / 工坊')}
@@ -322,11 +329,24 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           <div className="absolute inset-0">
             <PixelHomeMap homeState={homeState} assets={assets}
               charSprite={pixelCharSprite || charAvatar} userName={userName} lifeState={lifeState} onEnterRoom={handleEnterRoom}
+              onEnterCity={() => setViewMode('city')}
               onUpdateTheme={async theme => {
                 setHomeState(prev => prev ? { ...prev, theme } : prev);
                 try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
               }} />
-            <PixelLifeLogOverlay events={lifeEvents} lifeState={lifeState} userName={userName} variant="map" />
+            <PixelLifeLogOverlay events={lifeEvents} lifeState={lifeState} userName={userName} variant="map" city={pixelCity} />
+          </div>
+        )}
+        {viewMode === 'city' && pixelCity && (
+          <div className="absolute inset-0">
+            <PixelCityMap
+              city={pixelCity}
+              charSprite={pixelCharSprite || charAvatar}
+              lifeState={lifeState}
+              lifeEvents={lifeEvents}
+              userName={userName}
+            />
+            <PixelLifeLogOverlay events={lifeEvents} lifeState={lifeState} userName={userName} variant="map" city={pixelCity} />
           </div>
         )}
         {viewMode === 'room' && (
