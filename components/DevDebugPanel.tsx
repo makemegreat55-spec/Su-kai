@@ -19,6 +19,7 @@ import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition }
 
 const FLOATING_BUTTON_SIZE = 44;
 const FLOATING_SAFE_MARGIN = 16;
+const FLOATING_INPUT_BAR_CLEARANCE = 88;
 const PANEL_WIDTH = 342;
 const PANEL_ESTIMATED_HEIGHT = 392;
 const DRAG_THRESHOLD_PX = 4;
@@ -37,9 +38,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function clampFloatingPosition(position: DevDebugFloatingPosition): DevDebugFloatingPosition {
     const viewport = getViewportSize();
+    const maxY = viewport.height - FLOATING_BUTTON_SIZE - FLOATING_SAFE_MARGIN - FLOATING_INPUT_BAR_CLEARANCE;
     return {
         x: clamp(position.x, FLOATING_SAFE_MARGIN, viewport.width - FLOATING_BUTTON_SIZE - FLOATING_SAFE_MARGIN),
-        y: clamp(position.y, FLOATING_SAFE_MARGIN, viewport.height - FLOATING_BUTTON_SIZE - FLOATING_SAFE_MARGIN),
+        y: clamp(position.y, FLOATING_SAFE_MARGIN, maxY),
     };
 }
 
@@ -47,7 +49,7 @@ function getDefaultFloatingPosition(): DevDebugFloatingPosition {
     const viewport = getViewportSize();
     return clampFloatingPosition({
         x: FLOATING_SAFE_MARGIN,
-        y: viewport.height - FLOATING_BUTTON_SIZE - FLOATING_SAFE_MARGIN,
+        y: viewport.height - FLOATING_BUTTON_SIZE - FLOATING_SAFE_MARGIN - FLOATING_INPUT_BAR_CLEARANCE,
     });
 }
 
