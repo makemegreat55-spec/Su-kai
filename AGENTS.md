@@ -169,6 +169,79 @@ Known current build/cache marker:
 
 - `?v=1.15.3`
 
+## Version / Cache Rules
+
+Before production deploys that change app behavior, PWA behavior, service worker behavior, local static assets, or app metadata, bump all relevant production cache/version touchpoints together. Docs-only changes do not require a version bump.
+
+Su-kai version/cache touchpoints:
+
+- `worker/sw-keep-alive.ts`
+  - Bump `SW_VERSION` when service worker behavior, mobile/PWA refresh behavior, push handling, notification behavior, IDB handling, or cache-busting behavior must change.
+- `public/sw-keep-alive.js`
+  - Regenerate from `worker/sw-keep-alive.ts` with `node scripts/build-workers.mjs`.
+  - Keep this generated file in sync with the TypeScript source.
+- `utils/keepAlive.ts`
+  - The current registration target is `sw-keep-alive.js`.
+  - Only change the registration URL/query strategy when intentionally changing how the browser discovers or refreshes the service worker.
+- `index.html`
+  - Vite normally emits hashed JS/CSS assets, so manual query-string bumps are usually unnecessary.
+  - If local non-hashed scripts/styles or explicit query strings are added later, bump changed local JS/CSS query strings together.
+- `public/manifest.webmanifest`, `metadata.json`, and app icons
+  - Bump/cache-refresh only when manifest/PWA metadata, icon, app name, display mode, or related install metadata changes.
+
+Use the same build/cache version in the final production URL when a version bump is relevant:
+
+`https://su-beige.vercel.app/?v=<version>`
+
+Phone/PWA may require closing/reopening the app, refreshing with the new query, or waiting for the new service worker to activate.
+
+## Standard Checks
+
+For changed JavaScript or generated service-worker JavaScript:
+
+```bash
+node --check <changed-js-files>
+```
+
+For changed TypeScript/React paths, prefer focused Vitest runs when available, then run:
+
+```bash
+./node_modules/.bin/vite build
+```
+
+Always run:
+
+```bash
+git diff --check
+```
+
+Secret/danger scan over changed files or diff:
+
+```bash
+git diff -- <changed-files> | rg -n "^\\+.*(api[K]ey|Authori[z]ation|Bear[e]r|backend[T]oken|toke[n]|request[B]ody|system[P]rompt|console\\.lo[g]|console\\.erro[r])"
+```
+
+No output is expected. Exit code 1 from `rg` means no matches and is fine.
+
+Local smoke for the built static app:
+
+```bash
+./node_modules/.bin/vite build
+cd dist
+python3 -m http.server 4173 --bind 127.0.0.1
+curl -I 'http://127.0.0.1:4173/?v=<version>'
+curl -I 'http://127.0.0.1:4173/sw-keep-alive.js'
+curl -I 'http://127.0.0.1:4173/manifest.webmanifest'
+```
+
+If binding to `127.0.0.1` is blocked by sandbox, rerun the server command with escalation.
+
+Check port:
+
+```bash
+lsof -nP -iTCP:4173 -sTCP:LISTEN
+```
+
 ## Git / Auth Notes
 
 Run from repo root:
