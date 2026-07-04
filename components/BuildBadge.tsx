@@ -66,7 +66,7 @@ const BuildBadge: React.FC = () => {
     return (
         <div
             aria-hidden
-            className="fixed pointer-events-none select-none"
+            className="fixed hidden pointer-events-none select-none sm:block"
             style={{
                 bottom: 'calc(var(--safe-bottom) + 88px)',
                 right: 'calc(env(safe-area-inset-right, 0px) + 6px)',

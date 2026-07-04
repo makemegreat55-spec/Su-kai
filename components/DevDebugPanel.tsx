@@ -329,7 +329,7 @@ const DevDebugPanel: React.FC = () => {
 
     return (
         <div
-            className="fixed select-none"
+            className="fixed hidden select-none sm:block"
             style={{
                 left: open ? panelPosition.x : floatingPosition.x,
                 top: open ? panelPosition.y : floatingPosition.y,
