@@ -869,6 +869,7 @@ const Chat: React.FC = () => {
             const userMsgTimestamp = Date.now();
             savedUserMsgId = await DB.saveMessage({ ...msgPayload, timestamp: userMsgTimestamp });
             appendOptimisticMessage({ ...msgPayload, id: savedUserMsgId, timestamp: userMsgTimestamp } as Message);
+            setTotalMsgCount(prev => prev + 1);
             if (replyTarget) setReplyTarget(null);
             clearManualDraft();
 
@@ -998,10 +999,10 @@ const Chat: React.FC = () => {
                 if ((xhsCardCreated || webpageCardCreated) && savedUserMsgId) {
                     await DB.deleteMessage(savedUserMsgId);
                     setMessages(prev => prev.filter(m => m.id !== savedUserMsgId));
+                    setTotalMsgCount(prev => Math.max(0, prev - 1));
                 }
             }
 
-            await reloadMessages(visibleCountRef.current);
             setShowPanel('none');
 
             // Instant Push 模式：发完文本自动触发 AI（响应在 worker 端跑、后台 push 回写聊天页）。
