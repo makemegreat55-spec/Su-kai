@@ -66,8 +66,9 @@ import { installReiSW } from '@rei-standard/amsg-sw';
  *            / SW inbox 落库时序。
  *  - 1.15.2: mobile dev overlays hidden; bump SW bytes so PWA picks up fresh shell.
  *  - 1.15.3: chat send input preservation fix; bump SW bytes for PWA refresh.
+ *  - 1.15.4: DB.saveMessage waits for IndexedDB transaction completion before chat reload.
  */
-const SW_VERSION = '1.15.3';
+const SW_VERSION = '1.15.4';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;

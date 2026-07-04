@@ -648,9 +648,21 @@ export const DB = {
         const store = transaction.objectStore(STORE_MESSAGES);
         const timestamp = typeof msg.timestamp === 'number' ? msg.timestamp : Date.now();
         const { timestamp: _ignored, ...payload } = msg;
+        let savedId: number | null = null;
         const request = store.add({ ...payload, timestamp });
-        request.onsuccess = () => resolve(request.result as number);
+        request.onsuccess = () => {
+            savedId = request.result as number;
+        };
         request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => {
+            if (savedId === null) {
+                reject(new Error('Message save completed without an id'));
+                return;
+            }
+            resolve(savedId);
+        };
+        transaction.onerror = () => reject(transaction.error || request.error);
+        transaction.onabort = () => reject(transaction.error || request.error || new Error('saveMessage aborted'));
     });
   },
 
