@@ -182,6 +182,27 @@ git status -sb
 git branch --show-current
 ```
 
+GitHub auth may look broken inside sandbox. If `gh auth status` fails in sandbox, retry with escalated/outside-sandbox execution before assuming auth is invalid.
+
+Useful preflight:
+
+```bash
+git status -sb
+gh auth status
+gh repo view --json nameWithOwner,visibility,url
+npx --yes vercel@latest --version
+test -f .vercel/project.json && cat .vercel/project.json
+test -f vercel.json && cat vercel.json
+```
+
+Expected repo:
+
+`makemegreat55-spec/Su-kai`
+
+Expected production alias:
+
+`https://su-beige.vercel.app`
+
 Before publishing:
 
 ```bash
