@@ -65,8 +65,9 @@ import { installReiSW } from '@rei-standard/amsg-sw';
  *  - 1.15.1: 临时加 instant push trace，定位 iOS PWA 后台导致的 SSE Load failed / backup push
  *            / SW inbox 落库时序。
  *  - 1.15.2: mobile dev overlays hidden; bump SW bytes so PWA picks up fresh shell.
+ *  - 1.15.3: chat send input preservation fix; bump SW bytes for PWA refresh.
  */
-const SW_VERSION = '1.15.2';
+const SW_VERSION = '1.15.3';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;

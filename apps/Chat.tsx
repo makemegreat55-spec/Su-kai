@@ -785,6 +785,28 @@ const Chat: React.FC = () => {
         if (!char || (!input.trim() && !customContent)) return;
         const text = customContent || input.trim();
         const type = customType || 'text';
+        const isManualInput = !customContent;
+        let savedUserMsgId: number | null = null;
+
+        const clearManualDraft = () => {
+            if (!isManualInput) return;
+            setInput('');
+            localStorage.removeItem(draftKey);
+        };
+
+        const restoreManualDraft = () => {
+            if (!isManualInput) return;
+            setInput(text);
+            if (text.trim()) localStorage.setItem(draftKey, text);
+        };
+
+        const appendOptimisticMessage = (msg: Message) => {
+            setMessages(prev => {
+                const next = prev.filter(m => m.id !== msg.id);
+                next.push(msg);
+                return next.slice(-Math.max(visibleCountRef.current, LOAD_BATCH_SIZE));
+            });
+        };
 
         // 发消息隐含"回到当前聊天"——退出 windowed 旧消息浏览模式
         if (windowedFocusMsgId !== null) {
@@ -795,7 +817,7 @@ const Chat: React.FC = () => {
         // 用户手打"麦请求"三个字 → 等价于点击麦克风按钮 (拉起麦当劳菜单)
         // 不落库, 跟按钮点击行为完全一致, 避免出现"banner 在但菜单没拉起"的诡异状态
         if (!customContent && type === 'text' && text === MCD_ACTIVATE_TRIGGER) {
-            setInput(''); localStorage.removeItem(draftKey);
+            clearManualDraft();
             if (!isMcdConfigured()) {
                 addToast('请先到设置 → 麦当劳 启用并填入 MCP Token', 'info');
                 return;
@@ -807,186 +829,199 @@ const Chat: React.FC = () => {
 
         // 用户手打"瑞一杯" → 激活角色瑞幸点单模式 (注入提示词+工具+定位, 角色自己点)
         if (!customContent && type === 'text' && text === LUCKIN_ACTIVATE_TRIGGER) {
-            setInput(''); localStorage.removeItem(draftKey);
+            clearManualDraft();
             activateLuckin();
             return;
         }
         if (!customContent && type === 'text' && text === LUCKIN_DEACTIVATE_TRIGGER) {
-            setInput(''); localStorage.removeItem(draftKey);
+            clearManualDraft();
             deactivateLuckin();
             return;
         }
 
-        if (!customContent) { setInput(''); localStorage.removeItem(draftKey); }
-        
-        if (type === 'image') {
-            const recentChat = messages.slice(-10).map(m => {
-                const sender = m.role === 'user' ? userProfile.name : char.name;
-                return `${sender}: ${m.content.substring(0, 100)}`;
-            });
-            await DB.saveGalleryImage({
-                id: `img-${Date.now()}-${Math.random()}`,
-                charId: char.id,
-                url: text,
-                timestamp: Date.now(),
-                savedDate: new Date().toISOString().split('T')[0],
-                chatContext: recentChat
-            });
-            addToast('图片已保存至相册', 'info');
-        }
+        try {
+            if (type === 'image') {
+                const recentChat = messages.slice(-10).map(m => {
+                    const sender = m.role === 'user' ? userProfile.name : char.name;
+                    return `${sender}: ${m.content.substring(0, 100)}`;
+                });
+                await DB.saveGalleryImage({
+                    id: `img-${Date.now()}-${Math.random()}`,
+                    charId: char.id,
+                    url: text,
+                    timestamp: Date.now(),
+                    savedDate: new Date().toISOString().split('T')[0],
+                    chatContext: recentChat
+                });
+                addToast('图片已保存至相册', 'info');
+            }
 
-        const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata };
-        
-        if (replyTarget) {
-            msgPayload.replyTo = {
-                id: replyTarget.id,
-                content: replyTarget.content,
-                name: replyTarget.role === 'user' ? '我' : char.name
-            };
-            setReplyTarget(null);
-        }
+            const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata };
 
-        const savedUserMsgId = await DB.saveMessage(msgPayload);
+            if (replyTarget) {
+                msgPayload.replyTo = {
+                    id: replyTarget.id,
+                    content: replyTarget.content,
+                    name: replyTarget.role === 'user' ? '我' : char.name
+                };
+            }
 
-        // 小红书链接 → xhs_card。主路径不依赖任何后端：小红书分享文案自带标题（【标题】）
-        // 和笔记 id/token，直接解析就能建卡，让「没部署小红书 MCP」的用户也能让角色看到分享了哪篇笔记。
-        // 配了 MCP 的话再抓详情补正文/封面/作者（锦上添花，抓失败也不影响基础卡）。
-        if (type === 'text') {
-            let xhsCardCreated = false;
-            let webpageCardCreated = false;
-            const xhsFullMatch = text.match(/xiaohongshu\.com\/(?:discovery\/item|explore)\/([a-f0-9]{24})/);
-            const xhsShortMatch = text.match(/(?:https?:\/\/)?xhslink\.com\/[A-Za-z0-9/]+/i);
-            if (xhsFullMatch || xhsShortMatch) {
-                let noteId = xhsFullMatch?.[1] || '';
-                let xsecToken = text.match(/xsec_token=([^&\s]+)/)?.[1];
-                // 短链（xhslink.com）不含 id/token —— 先经 sfworker 展开成真实链接再提取。
-                if (!noteId && xhsShortMatch) {
-                    try {
-                        // 正则可能匹配到不带协议头的裸链接，补上 https 再展开（否则 new URL 报 Invalid URL）。
-                        const shortUrl = /^https?:\/\//i.test(xhsShortMatch[0]) ? xhsShortMatch[0] : `https://${xhsShortMatch[0]}`;
-                        const finalUrl = await expandShortUrl(shortUrl);
-                        noteId = finalUrl.match(/(?:discovery\/item|explore|item)\/([a-f0-9]{24})/)?.[1] || '';
-                        xsecToken = xsecToken || finalUrl.match(/xsec_token=([^&\s]+)/)?.[1];
-                        if (isDevDebugAvailable()) console.log('[卡片调试] 小红书短链展开 →', finalUrl, '| noteId =', noteId);
-                    } catch (e) {
-                        console.warn('xhslink 短链展开失败:', e);
-                    }
-                }
-                // 文案标题形如「【标题 | 小红书 …】」，剥掉 "| 小红书…" 后缀（短链文案常无此块）。
-                const titleFromText = (text.match(/【(.+?)】/)?.[1] || '')
-                    .replace(/\s*[|｜]\s*小红书.*$/, '').trim();
+            const userMsgTimestamp = Date.now();
+            savedUserMsgId = await DB.saveMessage({ ...msgPayload, timestamp: userMsgTimestamp });
+            appendOptimisticMessage({ ...msgPayload, id: savedUserMsgId, timestamp: userMsgTimestamp } as Message);
+            if (replyTarget) setReplyTarget(null);
+            clearManualDraft();
 
-                // 拿不到 noteId（短链展开失败/被挡）就不建空卡，保留原文给用户。
-                if (noteId) {
-                    // 基础卡数据来自分享文案，零后端依赖。
-                    let note: any = {
-                        noteId, title: titleFromText || '', desc: '', author: '',
-                        authorId: '', likes: 0, xsecToken,
-                    };
-
-                    // 有小红书 MCP/Lite 才抓详情补全（正文/封面/作者/赞数）。
-                    const mcpUrl = realtimeConfig?.xhsMcpConfig?.serverUrl;
-                    if (mcpUrl && realtimeConfig?.xhsMcpConfig?.enabled) {
+            // 小红书链接 → xhs_card。主路径不依赖任何后端：小红书分享文案自带标题（【标题】）
+            // 和笔记 id/token，直接解析就能建卡，让「没部署小红书 MCP」的用户也能让角色看到分享了哪篇笔记。
+            // 配了 MCP 的话再抓详情补正文/封面/作者（锦上添花，抓失败也不影响基础卡）。
+            if (type === 'text') {
+                let xhsCardCreated = false;
+                let webpageCardCreated = false;
+                const xhsFullMatch = text.match(/xiaohongshu\.com\/(?:discovery\/item|explore)\/([a-f0-9]{24})/);
+                const xhsShortMatch = text.match(/(?:https?:\/\/)?xhslink\.com\/[A-Za-z0-9/]+/i);
+                if (xhsFullMatch || xhsShortMatch) {
+                    let noteId = xhsFullMatch?.[1] || '';
+                    let xsecToken = text.match(/xsec_token=([^&\s]+)/)?.[1];
+                    // 短链（xhslink.com）不含 id/token —— 先经 sfworker 展开成真实链接再提取。
+                    if (!noteId && xhsShortMatch) {
                         try {
-                            const noteUrl = `https://www.xiaohongshu.com/explore/${noteId}${xsecToken ? `?xsec_token=${xsecToken}&xsec_source=pc_share` : ''}`;
-                            // loadAllComments：和角色自己浏览笔记 (XHS_DETAIL) 一致地把评论区也抓回来，
-                            // 否则 user 分享的笔记只有标题/正文，角色读不到评论（char 分享给 user 的却能看到）。
-                            const result = await XhsMcpClient.getNoteDetail(mcpUrl, noteUrl, xsecToken, { loadAllComments: true });
-                            if (isDevDebugAvailable()) console.log('[卡片调试] 小红书抓取 result =', result);
-                            if (result.success && result.data) {
-                                // bridge(Lite) 返回 { data: { note, comments } }；MCP 可能直接是 note —— 逐层解包。
-                                const dataRoot = (result.data as any)?.data || result.data;
-                                const noteObj = dataRoot?.note || (result.data as any)?.note || result.data;
-                                const fetched = normalizeNote(noteObj);
-                                // 抓到的字段补全基础卡；id/标题/token 保底，标题优先文案标题（更完整可读）。
-                                note = { ...note, ...fetched, noteId: fetched.noteId || note.noteId, title: titleFromText || fetched.title || note.title, xsecToken: fetched.xsecToken || xsecToken };
-                                // normalizeNote 只保留笔记基础字段会丢掉评论 —— 单独解包评论挂回卡片，
-                                // 让角色读 context 时也能看到评论区（与 char 浏览/分享笔记对齐）。
-                                const rawComments = dataRoot?.comments?.list || dataRoot?.comments
-                                    || (noteObj as any)?.comments?.list || (noteObj as any)?.comments || [];
-                                const comments = (Array.isArray(rawComments) ? rawComments : []).map((c: any) => ({
-                                    author: c.userInfo?.nickname || c.nickname || c.userName || c.author || '匿名',
-                                    content: c.content || '',
-                                    likes: c.likeCount || c.like_count || c.likes || 0,
-                                })).filter((c: any) => c.content).slice(0, 15);
-                                if (comments.length) note.comments = comments;
-                            }
+                            // 正则可能匹配到不带协议头的裸链接，补上 https 再展开（否则 new URL 报 Invalid URL）。
+                            const shortUrl = /^https?:\/\//i.test(xhsShortMatch[0]) ? xhsShortMatch[0] : `https://${xhsShortMatch[0]}`;
+                            const finalUrl = await expandShortUrl(shortUrl);
+                            noteId = finalUrl.match(/(?:discovery\/item|explore|item)\/([a-f0-9]{24})/)?.[1] || '';
+                            xsecToken = xsecToken || finalUrl.match(/xsec_token=([^&\s]+)/)?.[1];
+                            if (isDevDebugAvailable()) console.log('[卡片调试] 小红书短链展开 →', finalUrl, '| noteId =', noteId);
                         } catch (e) {
-                            console.warn('XHS link fetch via MCP failed (已用文案兜底):', e);
+                            console.warn('xhslink 短链展开失败:', e);
                         }
                     }
+                    // 文案标题形如「【标题 | 小红书 …】」，剥掉 "| 小红书…" 后缀（短链文案常无此块）。
+                    const titleFromText = (text.match(/【(.+?)】/)?.[1] || '')
+                        .replace(/\s*[|｜]\s*小红书.*$/, '').trim();
 
-                    await DB.saveMessage({
-                        charId: char.id,
-                        role: 'user',
-                        type: 'xhs_card',
-                        content: note.title || '小红书笔记',
-                        metadata: { xhsNote: note }
-                    });
-                    // F12 调试（仅开发分支）：打印卡片存了啥 + 角色实际会读到的文本。
-                    if (isDevDebugAvailable()) {
-                        console.log('[卡片调试] 小红书卡片·metadata =', note);
-                        console.log('[卡片调试] 小红书卡片·角色将读到 =\n' + normalizeMessageContent(
-                            { type: 'xhs_card', role: 'user', content: note.title || '小红书笔记', metadata: { xhsNote: note } } as any,
-                            char.name, userProfile.name,
-                        ));
+                    // 拿不到 noteId（短链展开失败/被挡）就不建空卡，保留原文给用户。
+                    if (noteId) {
+                        // 基础卡数据来自分享文案，零后端依赖。
+                        let note: any = {
+                            noteId, title: titleFromText || '', desc: '', author: '',
+                            authorId: '', likes: 0, xsecToken,
+                        };
+
+                        // 有小红书 MCP/Lite 才抓详情补全（正文/封面/作者/赞数）。
+                        const mcpUrl = realtimeConfig?.xhsMcpConfig?.serverUrl;
+                        if (mcpUrl && realtimeConfig?.xhsMcpConfig?.enabled) {
+                            try {
+                                const noteUrl = `https://www.xiaohongshu.com/explore/${noteId}${xsecToken ? `?xsec_token=${xsecToken}&xsec_source=pc_share` : ''}`;
+                                // loadAllComments：和角色自己浏览笔记 (XHS_DETAIL) 一致地把评论区也抓回来，
+                                // 否则 user 分享的笔记只有标题/正文，角色读不到评论（char 分享给 user 的却能看到）。
+                                const result = await XhsMcpClient.getNoteDetail(mcpUrl, noteUrl, xsecToken, { loadAllComments: true });
+                                if (isDevDebugAvailable()) console.log('[卡片调试] 小红书抓取 result =', result);
+                                if (result.success && result.data) {
+                                    // bridge(Lite) 返回 { data: { note, comments } }；MCP 可能直接是 note —— 逐层解包。
+                                    const dataRoot = (result.data as any)?.data || result.data;
+                                    const noteObj = dataRoot?.note || (result.data as any)?.note || result.data;
+                                    const fetched = normalizeNote(noteObj);
+                                    // 抓到的字段补全基础卡；id/标题/token 保底，标题优先文案标题（更完整可读）。
+                                    note = { ...note, ...fetched, noteId: fetched.noteId || note.noteId, title: titleFromText || fetched.title || note.title, xsecToken: fetched.xsecToken || xsecToken };
+                                    // normalizeNote 只保留笔记基础字段会丢掉评论 —— 单独解包评论挂回卡片，
+                                    // 让角色读 context 时也能看到评论区（与 char 浏览/分享笔记对齐）。
+                                    const rawComments = dataRoot?.comments?.list || dataRoot?.comments
+                                        || (noteObj as any)?.comments?.list || (noteObj as any)?.comments || [];
+                                    const comments = (Array.isArray(rawComments) ? rawComments : []).map((c: any) => ({
+                                        author: c.userInfo?.nickname || c.nickname || c.userName || c.author || '匿名',
+                                        content: c.content || '',
+                                        likes: c.likeCount || c.like_count || c.likes || 0,
+                                    })).filter((c: any) => c.content).slice(0, 15);
+                                    if (comments.length) note.comments = comments;
+                                }
+                            } catch (e) {
+                                console.warn('XHS link fetch via MCP failed (已用文案兜底):', e);
+                            }
+                        }
+
+                        const xhsCardTimestamp = Date.now();
+                        const xhsCardPayload: any = {
+                            charId: char.id,
+                            role: 'user',
+                            type: 'xhs_card',
+                            content: note.title || '小红书笔记',
+                            metadata: { xhsNote: note }
+                        };
+                        const xhsCardId = await DB.saveMessage({ ...xhsCardPayload, timestamp: xhsCardTimestamp });
+                        appendOptimisticMessage({ ...xhsCardPayload, id: xhsCardId, timestamp: xhsCardTimestamp } as Message);
+                        // F12 调试（仅开发分支）：打印卡片存了啥 + 角色实际会读到的文本。
+                        if (isDevDebugAvailable()) {
+                            console.log('[卡片调试] 小红书卡片·metadata =', note);
+                            console.log('[卡片调试] 小红书卡片·角色将读到 =\n' + normalizeMessageContent(
+                                { type: 'xhs_card', role: 'user', content: note.title || '小红书笔记', metadata: { xhsNote: note } } as any,
+                                char.name, userProfile.name,
+                            ));
+                        }
+                        xhsCardCreated = true;
                     }
-                    xhsCardCreated = true;
+                }
+
+                // 通用网页分享：检测到普通 http(s) 链接 → 抓取正文存成 webpage_card，
+                // 让角色"看见"网页内容。跳过 XHS 链接（上面已有专门的 MCP 卡片路径）。
+                const sharedUrl = detectFirstUrl(text);
+                if (sharedUrl && !isXhsUrl(sharedUrl) && !(xhsFullMatch || xhsShortMatch)) {
+                    try {
+                        addToast('正在读取网页内容…', 'info');
+                        const webpage = await extractWebpageContent(sharedUrl);
+                        const webpageCardTimestamp = Date.now();
+                        const webpageCardPayload: any = {
+                            charId: char.id,
+                            role: 'user',
+                            type: 'webpage_card',
+                            content: webpage.title,
+                            metadata: { webpage },
+                        };
+                        const webpageCardId = await DB.saveMessage({ ...webpageCardPayload, timestamp: webpageCardTimestamp });
+                        appendOptimisticMessage({ ...webpageCardPayload, id: webpageCardId, timestamp: webpageCardTimestamp } as Message);
+                        // F12 调试（仅开发分支）：打印卡片存了啥 + 角色实际会读到的文本。
+                        if (isDevDebugAvailable()) {
+                            console.log('[卡片调试] 网页卡片·metadata =', webpage);
+                            console.log('[卡片调试] 网页卡片·角色将读到 =\n' + normalizeMessageContent(
+                                { type: 'webpage_card', role: 'user', content: webpage.title, metadata: { webpage } } as any,
+                                char.name, userProfile.name,
+                            ));
+                        }
+                        webpageCardCreated = true;
+                    } catch (e: any) {
+                        console.warn('Webpage fetch failed:', e);
+                        addToast(`网页抓取失败：${e?.message || '可能被站点拦截，建议在设置里配置 instant worker 作代理'}`, 'error');
+                    }
+                }
+
+                // 一段话里出现链接 = 整条就是分享（符合用户习惯）→ 建卡成功就删原文，只留卡片。
+                if ((xhsCardCreated || webpageCardCreated) && savedUserMsgId) {
+                    await DB.deleteMessage(savedUserMsgId);
+                    setMessages(prev => prev.filter(m => m.id !== savedUserMsgId));
                 }
             }
 
-            // 通用网页分享：检测到普通 http(s) 链接 → 抓取正文存成 webpage_card，
-            // 让角色"看见"网页内容。跳过 XHS 链接（上面已有专门的 MCP 卡片路径）。
-            const sharedUrl = detectFirstUrl(text);
-            if (sharedUrl && !isXhsUrl(sharedUrl) && !(xhsFullMatch || xhsShortMatch)) {
-                try {
-                    addToast('正在读取网页内容…', 'info');
-                    const webpage = await extractWebpageContent(sharedUrl);
-                    await DB.saveMessage({
-                        charId: char.id,
-                        role: 'user',
-                        type: 'webpage_card',
-                        content: webpage.title,
-                        metadata: { webpage },
-                    });
-                    // F12 调试（仅开发分支）：打印卡片存了啥 + 角色实际会读到的文本。
-                    if (isDevDebugAvailable()) {
-                        console.log('[卡片调试] 网页卡片·metadata =', webpage);
-                        console.log('[卡片调试] 网页卡片·角色将读到 =\n' + normalizeMessageContent(
-                            { type: 'webpage_card', role: 'user', content: webpage.title, metadata: { webpage } } as any,
-                            char.name, userProfile.name,
-                        ));
-                    }
-                    webpageCardCreated = true;
-                } catch (e: any) {
-                    console.warn('Webpage fetch failed:', e);
-                    addToast(`网页抓取失败：${e?.message || '可能被站点拦截，建议在设置里配置 instant worker 作代理'}`, 'error');
-                }
+            await reloadMessages(visibleCountRef.current);
+            setShowPanel('none');
+
+            // Instant Push 模式：发完文本自动触发 AI（响应在 worker 端跑、后台 push 回写聊天页）。
+            // 本地模式仍维持手动触发以保留现有 UX。triggerAI 内部会从 DB 拉完整历史，
+            // 闭包里的 messages 还没包含刚写入的 user msg 也没关系。
+            // 仅文本消息触发；image / xhs_card 等卡片消息不触发，与本地手动行为对齐。
+            // autoTriggerOnSend gate：instant ready 也只在用户显式开启"发送后自动触发"时才自动回复，
+            // 否则保留手动 ⚡（避免"启用 instant = 自动回复"的反直觉强绑定）。
+            const instantCfg = loadInstantConfig();
+            if (type === 'text' && isInstantConfigReady(instantCfg) && instantCfg.autoTriggerOnSend) {
+                // 上一轮还在跑时直接跳过：triggerAI 内部会因 isTyping=true 静默 reject，
+                // 提前 guard 避免点亮"准备中"指示灯后没人来清，UI 灯被卡住。
+                if (isTyping) return;
+                // 标记"准备中"三个点：拼接+发送期间显示，SSE POST 入队 (onInstantPosted) 后清除。
+                setInstantSendingActive(true);
+                triggerAI(messages, undefined, () => setInstantSendingActive(false));
             }
-
-            // 一段话里出现链接 = 整条就是分享（符合用户习惯）→ 建卡成功就删原文，只留卡片。
-            if ((xhsCardCreated || webpageCardCreated) && savedUserMsgId) {
-                await DB.deleteMessage(savedUserMsgId);
-            }
-        }
-
-        await reloadMessages(visibleCountRef.current);
-        setShowPanel('none');
-
-        // Instant Push 模式：发完文本自动触发 AI（响应在 worker 端跑、后台 push 回写聊天页）。
-        // 本地模式仍维持手动触发以保留现有 UX。triggerAI 内部会从 DB 拉完整历史，
-        // 闭包里的 messages 还没包含刚写入的 user msg 也没关系。
-        // 仅文本消息触发；image / xhs_card 等卡片消息不触发，与本地手动行为对齐。
-        // autoTriggerOnSend gate：instant ready 也只在用户显式开启"发送后自动触发"时才自动回复，
-        // 否则保留手动 ⚡（避免"启用 instant = 自动回复"的反直觉强绑定）。
-        const instantCfg = loadInstantConfig();
-        if (type === 'text' && isInstantConfigReady(instantCfg) && instantCfg.autoTriggerOnSend) {
-            // 上一轮还在跑时直接跳过：triggerAI 内部会因 isTyping=true 静默 reject，
-            // 提前 guard 避免点亮"准备中"指示灯后没人来清，UI 灯被卡住。
-            if (isTyping) return;
-            // 标记"准备中"三个点：拼接+发送期间显示，SSE POST 入队 (onInstantPosted) 后清除。
-            setInstantSendingActive(true);
-            triggerAI(messages, undefined, () => setInstantSendingActive(false));
+        } catch (e: any) {
+            if (!savedUserMsgId) restoreManualDraft();
+            addToast(`发送失败：${e?.message || '消息没有保存，请重试'}`, 'error');
         }
     };
 
