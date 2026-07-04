@@ -65,13 +65,22 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
 
   const pendingSlotRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const addToastRef = useRef(addToast);
+  const lastLoadedCharIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setLifeState(null);
-      setLifeEvents([]);
+      const isCharSwitch = lastLoadedCharIdRef.current !== charId;
+      if (isCharSwitch) {
+        setLoading(true);
+        setLifeState(null);
+        setLifeEvents([]);
+      }
       try {
         const simChar = {
           id: charId,
@@ -91,6 +100,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           runPixelLifeCatchup(simChar, { maxEvents: 6 }).catch(() => null),
         ]);
         if (!cancelled) {
+          lastLoadedCharIdRef.current = charId;
           if (savedTheme) {
             try { state.theme = JSON.parse(savedTheme); } catch {}
           }
@@ -120,11 +130,11 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         }
       } catch (err) {
         console.error('❌ [PixelHome] Failed to load:', err);
-        addToast?.('加载像素家园失败', 'error');
+        addToastRef.current?.('加载像素家园失败', 'error');
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [charId, charName, char?.description, char?.name, char?.systemPrompt, char?.worldview, addToast]);
+  }, [charId, charName, char?.description, char?.name, char?.systemPrompt, char?.worldview]);
 
   // 保存像素小人（按 editorTarget 分别存到角色/用户 key）
   const handleSaveChar = useCallback(async (cfg: PixelCharConfig, imageUri: string) => {

@@ -89,32 +89,6 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
     event.stopPropagation();
   };
 
-  if (variant === 'room') {
-    return (
-      <details className="absolute inset-y-0 right-0 z-[70] w-12">
-        <summary
-          aria-label="展开生活日志"
-          className="pointer-events-auto absolute right-2 top-1/2 z-[75] -translate-y-1/2 cursor-pointer select-none rounded-l-2xl border border-white/10 bg-slate-950/80 px-2 py-3 text-[10px] font-bold text-amber-100 shadow-2xl backdrop-blur-md transition-transform active:scale-95 [&::-webkit-details-marker]:hidden"
-        >
-          <span className="block leading-none">日</span>
-          <span className="mt-1 block leading-none">志</span>
-        </summary>
-        <section
-          className="pointer-events-auto absolute bottom-3 right-10 z-[70] max-h-36 w-[min(24rem,calc(100vw-4.5rem))] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/75 p-3 shadow-2xl backdrop-blur-md no-scrollbar"
-          onClick={stopOverlayEvent}
-          onPointerDown={stopOverlayEvent}
-        >
-          <LifeLogPanelBody
-            visibleEvents={visibleEvents}
-            currentText={currentText}
-            hasMemoryCandidate={hasMemoryCandidate}
-            userName={userName}
-          />
-        </section>
-      </details>
-    );
-  }
-
   const runOnce = (event: React.SyntheticEvent, action: () => void) => {
     event.preventDefault();
     event.stopPropagation();
@@ -131,6 +105,46 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
   const collapsePanel = (event: React.SyntheticEvent) => {
     runOnce(event, () => setCollapsed(true));
   };
+
+  if (variant === 'room') {
+    const roomTab = (
+      <button
+        type="button"
+        aria-label={collapsed ? '展开生活日志' : '折叠生活日志'}
+        onClick={collapsed ? expandPanel : collapsePanel}
+        onMouseDown={collapsed ? expandPanel : collapsePanel}
+        onPointerDown={collapsed ? expandPanel : collapsePanel}
+        onTouchStart={collapsed ? expandPanel : collapsePanel}
+        className="pointer-events-auto absolute right-2 top-1/2 z-[75] -translate-y-1/2 cursor-pointer select-none rounded-l-2xl border border-white/10 bg-slate-950/80 px-2 py-3 text-[10px] font-bold text-amber-100 shadow-2xl backdrop-blur-md transition-transform active:scale-95"
+      >
+        <span className="block leading-none">日</span>
+        <span className="mt-1 block leading-none">志</span>
+      </button>
+    );
+
+    if (collapsed) {
+      return roomTab;
+    }
+
+    return (
+      <>
+        {roomTab}
+        <section
+          className="pointer-events-auto absolute bottom-3 right-10 z-[70] max-h-36 w-[min(24rem,calc(100vw-4.5rem))] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/75 p-3 shadow-2xl backdrop-blur-md no-scrollbar"
+          onClick={stopOverlayEvent}
+          onPointerDown={stopOverlayEvent}
+          onTouchStart={stopOverlayEvent}
+        >
+          <LifeLogPanelBody
+            visibleEvents={visibleEvents}
+            currentText={currentText}
+            hasMemoryCandidate={hasMemoryCandidate}
+            userName={userName}
+          />
+        </section>
+      </>
+    );
+  }
 
   if (collapsed) {
     return (
@@ -157,6 +171,7 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
       className={panelClassName}
       onClick={stopOverlayEvent}
       onPointerDown={stopOverlayEvent}
+      onTouchStart={stopOverlayEvent}
     >
       <LifeLogPanelBody
         visibleEvents={visibleEvents}
