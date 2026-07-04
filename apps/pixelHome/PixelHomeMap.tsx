@@ -7,16 +7,18 @@
  */
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import type { PixelHomeState, PixelHomeTheme, PixelAsset } from './types';
+import type { PixelHomeState, PixelHomeTheme, PixelAsset, PixelLifeState } from './types';
 import { DEFAULT_HOME_THEME, decodeColorField } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { ROOM_META, ROOM_SIZES } from './roomTemplates';
+import { getPixelLifeActionLabel } from './lifeSim';
 
 interface Props {
   homeState: PixelHomeState;
   assets: PixelAsset[];
   charSprite?: string;
   userName: string;
+  lifeState?: PixelLifeState | null;
   onEnterRoom: (roomId: MemoryRoom) => void;
   /** 修改全局主题色（外围墙体/背景）。父层负责落盘。 */
   onUpdateTheme?: (theme: PixelHomeTheme) => void;
@@ -63,7 +65,7 @@ const WALL_BORDER_FALLBACK = DEFAULT_HOME_THEME.wallBorder;
 const WALL_BORDER_LIGHT_FALLBACK = DEFAULT_HOME_THEME.wallBorderLight;
 const BG_COLOR_FALLBACK = DEFAULT_HOME_THEME.bgColor;
 
-const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, onEnterRoom, onUpdateTheme }) => {
+const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, lifeState, onEnterRoom, onUpdateTheme }) => {
   const theme = homeState.theme || DEFAULT_HOME_THEME;
   const WALL_BORDER = theme.wallBorder || WALL_BORDER_FALLBACK;
   const WALL_BORDER_LIGHT = theme.wallBorderLight || WALL_BORDER_LIGHT_FALLBACK;
@@ -86,6 +88,18 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
   const [charStep, setCharStep] = useState(0);
   const charTargetRef = useRef({ x: 50, y: 60 });
   const charPosRef = useRef({ x: 50, y: 60 });
+  const activeLifeRoomIdx = lifeState?.currentPlaceId
+    ? FLOOR_PLAN.findIndex(room => room.roomId === lifeState.currentPlaceId)
+    : -1;
+  const currentActionLabel = lifeState ? getPixelLifeActionLabel(lifeState.currentActionType) : '';
+
+  useEffect(() => {
+    if (activeLifeRoomIdx < 0) return;
+    charPosRef.current = { x: 50, y: 60 };
+    charTargetRef.current = { x: 50, y: 60 };
+    setCharPos({ roomIdx: activeLifeRoomIdx, x: 50, y: 60 });
+    setCharWalking(false);
+  }, [activeLifeRoomIdx]);
 
   useEffect(() => {
     const pickTarget = () => {
@@ -122,6 +136,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
 
     // 每隔 12~20 秒有概率换个房间；避免永远只待在客厅
     const roomSwitchTimer = setInterval(() => {
+      if (activeLifeRoomIdx >= 0) return;
       if (Math.random() < 0.55) {
         const nextIdx = Math.floor(Math.random() * FLOOR_PLAN.length);
         charPosRef.current = { x: 50, y: 60 };
@@ -131,7 +146,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
     }, 12000 + Math.random() * 8000);
 
     return () => { clearInterval(stepTimer); clearInterval(targetTimer); clearInterval(roomSwitchTimer); };
-  }, []);
+  }, [activeLifeRoomIdx]);
 
   // wheel
   useEffect(() => {
@@ -433,6 +448,12 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                       height: 24,
                       transform: `translate(-50%, -100%) scaleX(${charFlip ? -1 : 1})`,
                     }}>
+                    {currentActionLabel && (
+                      <div className="absolute left-1/2 -top-6 rounded-full bg-slate-950/75 px-1.5 py-0.5 text-[7px] font-bold text-white/90 shadow-sm whitespace-nowrap"
+                        style={{ transform: `translateX(-50%) scaleX(${charFlip ? -1 : 1})` }}>
+                        {currentActionLabel}
+                      </div>
+                    )}
                     <img src={charSprite} className="drop-shadow-sm"
                       style={{
                         display: 'block',

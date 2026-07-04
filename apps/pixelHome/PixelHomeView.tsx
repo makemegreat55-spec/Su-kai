@@ -7,11 +7,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../../context/OSContext';
-import type { PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture } from './types';
+import type { PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture, PixelLifeEvent, PixelLifeState } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { getOrCreateHomeState, PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
 import { ROOM_META } from './roomTemplates';
 import { downloadPreset, importPreset, readFileAsText } from './presetManager';
+import { getPixelLifeActionLabel } from './lifeSim';
+import { runPixelLifeCatchup } from './lifeSimDb';
 import PixelHomeMap from './PixelHomeMap';
 import PixelRoomEditor from './PixelRoomEditor';
 import PixelAssetGenerator from './PixelAssetGenerator';
@@ -58,6 +60,8 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   /** 打开捏人界面时编辑的是"角色"还是"用户自己" */
   const [editorTarget, setEditorTarget] = useState<'char' | 'user'>('char');
   const [lastDiveResult, setLastDiveResult] = useState<DiveResult | null>(null);
+  const [lifeState, setLifeState] = useState<PixelLifeState | null>(null);
+  const [lifeEvents, setLifeEvents] = useState<PixelLifeEvent[]>([]);
 
   const pendingSlotRef = useRef<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -66,8 +70,17 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLifeState(null);
+      setLifeEvents([]);
       try {
-        const [state, allAssets, savedChar, savedUser, savedTheme] = await Promise.all([
+        const simChar = {
+          id: charId,
+          name: char?.name || charName,
+          description: char?.description || '',
+          systemPrompt: char?.systemPrompt || '',
+          worldview: char?.worldview,
+        };
+        const [state, allAssets, savedChar, savedUser, savedTheme, lifeResult] = await Promise.all([
           getOrCreateHomeState(charId),
           PixelAssetDB.getAll(),
           DB.getAsset(`pixel_char_${charId}`),
@@ -75,6 +88,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           DB.getAsset(`pixel_char_user`),
           // 家园主题色按角色保存
           DB.getAsset(`pixel_home_theme_${charId}`),
+          runPixelLifeCatchup(simChar, { maxEvents: 6 }).catch(() => null),
         ]);
         if (!cancelled) {
           if (savedTheme) {
@@ -82,6 +96,13 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           }
           setHomeState(state);
           setAssets(allAssets);
+          if (lifeResult) {
+            setLifeState(lifeResult.state);
+            setLifeEvents(lifeResult.todayEvents);
+          } else {
+            setLifeState(null);
+            setLifeEvents([]);
+          }
           if (savedChar) {
             const cfg = JSON.parse(savedChar) as PixelCharConfig;
             setPixelCharConfig(cfg);
@@ -103,7 +124,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [charId]);
+  }, [charId, charName, char?.description, char?.name, char?.systemPrompt, char?.worldview, addToast]);
 
   // 保存像素小人（按 editorTarget 分别存到角色/用户 key）
   const handleSaveChar = useCallback(async (cfg: PixelCharConfig, imageUri: string) => {
@@ -288,12 +309,15 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
       {/* 主内容区 */}
       <div className="flex-1 overflow-hidden relative">
         {viewMode === 'map' && (
-          <PixelHomeMap homeState={homeState} assets={assets}
-            charSprite={pixelCharSprite || charAvatar} userName={userName} onEnterRoom={handleEnterRoom}
-            onUpdateTheme={async theme => {
-              setHomeState(prev => prev ? { ...prev, theme } : prev);
-              try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
-            }} />
+          <div className="absolute inset-0">
+            <PixelHomeMap homeState={homeState} assets={assets}
+              charSprite={pixelCharSprite || charAvatar} userName={userName} lifeState={lifeState} onEnterRoom={handleEnterRoom}
+              onUpdateTheme={async theme => {
+                setHomeState(prev => prev ? { ...prev, theme } : prev);
+                try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
+              }} />
+            <LifeLogPanel events={lifeEvents} lifeState={lifeState} userName={userName} />
+          </div>
         )}
         {viewMode === 'room' && (
           <PixelRoomEditor charId={charId} charName={charName}
@@ -351,6 +375,61 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
         </div>
       )}
     </div>
+  );
+};
+
+const formatLifeEventTime = (timestamp: number) => {
+  try {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '--:--';
+  }
+};
+
+const LifeLogPanel: React.FC<{
+  events: PixelLifeEvent[];
+  lifeState: PixelLifeState | null;
+  userName: string;
+}> = ({ events, lifeState, userName }) => {
+  const visibleEvents = [...events].sort((a, b) => b.timestamp - a.timestamp).slice(0, 4);
+  const roomName = (roomId: MemoryRoom) => roomId === 'user_room' ? `${userName}的房` : ROOM_META[roomId]?.name || roomId;
+  const currentText = lifeState
+    ? `${roomName(lifeState.currentPlaceId)} · ${getPixelLifeActionLabel(lifeState.currentActionType)}`
+    : '正在醒来';
+
+  return (
+    <section className="absolute left-3 right-3 bottom-3 z-[60] max-h-40 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-2xl backdrop-blur-md">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold tracking-wide text-slate-100">今日的生活日志</div>
+          <div className="mt-0.5 text-[10px] text-slate-400 truncate">现在：{currentText}</div>
+        </div>
+        {visibleEvents.some(e => e.memoryCandidate) && (
+          <span className="shrink-0 rounded-full bg-amber-400/15 px-2 py-1 text-[9px] font-bold text-amber-200">
+            记忆候选
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {visibleEvents.length === 0 && (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-300">
+            今天还在慢慢开始。
+          </div>
+        )}
+        {visibleEvents.map(event => (
+          <div key={event.id}
+            className={`rounded-xl border px-3 py-2 ${event.memoryCandidate ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/5'}`}>
+            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+              <span className="tabular-nums">{formatLifeEventTime(event.timestamp)}</span>
+              <span>{roomName(event.placeId)}</span>
+              <span className="min-w-0 flex-1 truncate font-bold text-slate-200">{event.title}</span>
+            </div>
+            <div className="mt-0.5 truncate text-[10px] leading-4 text-slate-300">{event.summary}</div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 };
 

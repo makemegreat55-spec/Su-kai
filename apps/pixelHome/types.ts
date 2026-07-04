@@ -116,6 +116,65 @@ export interface PixelHomeState {
   theme?: PixelHomeTheme;
 }
 
+// ─── 轻量生活模拟 ─────────────────────────────────────
+
+export type PixelLifeActionType =
+  | 'wake'
+  | 'meal'
+  | 'work'
+  | 'study'
+  | 'hobby'
+  | 'social'
+  | 'rest'
+  | 'reflect'
+  | 'tidy'
+  | 'sleep';
+
+export interface PixelLifeEvent {
+  id: string;
+  charId: string;
+  timestamp: number;
+  dayKey: string;
+  placeId: MemoryRoom;
+  actionType: PixelLifeActionType;
+  title: string;
+  summary: string;
+  moodDelta?: number;
+  energyDelta?: number;
+  socialDelta?: number;
+  importance: number;
+  relatedCharacterIds?: string[];
+  memoryCandidate?: boolean;
+  createdBy: 'rule' | 'ai';
+}
+
+export interface PixelLifeState {
+  charId: string;
+  currentPlaceId: MemoryRoom;
+  currentActionType: PixelLifeActionType;
+  mood: number;
+  energy: number;
+  social: number;
+  lastSimulatedAt: number;
+  dayKey: string;
+  todayEventIds: string[];
+  worldStyle?: string;
+  job?: string;
+  hobbies?: string[];
+}
+
+export interface PixelLifeMemoryCandidate {
+  source: 'pixel-home-life';
+  charId: string;
+  eventId: string;
+  content: string;
+  room: MemoryRoom;
+  importance: number;
+  mood: string;
+  tags: string[];
+  createdAt: number;
+}
+
 // ─── LLM 装修动作 ─────────────────────────────────────
 
 export type DecorationActionType = 'move' | 'recolor' | 'rescale' | 'set_wall' | 'set_floor' | 'set_ambiance';
