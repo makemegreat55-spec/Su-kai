@@ -156,11 +156,12 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
             const colors = placeColor[place.type];
             const active = selectedPlace?.id === place.id;
             const current = currentPlace?.id === place.id;
+            const ringClass = current ? 'ring-2 ring-emerald-200' : active ? 'ring-2 ring-amber-200' : '';
             return (
               <button
                 key={place.id}
                 type="button"
-                className={`absolute overflow-hidden rounded-sm border-2 text-left shadow-md transition-transform active:scale-95 ${active ? 'ring-2 ring-amber-200' : ''} ${current ? 'animate-pulse' : ''}`}
+                className={`absolute overflow-hidden rounded-sm border-2 text-left shadow-md transition-transform active:scale-95 ${ringClass}`}
                 style={{
                   left: place.x * tileSize,
                   top: place.y * tileSize,
@@ -243,4 +244,4 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
   );
 };
 
-export default PixelCityMap;
+export default React.memo(PixelCityMap);

@@ -548,4 +548,4 @@ const Corridor: React.FC<{ x: number; y1: number; y2: number; border: string; st
   }} />;
 };
 
-export default PixelHomeMap;
+export default React.memo(PixelHomeMap);

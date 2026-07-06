@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../../context/OSContext';
-import type { PixelCityMapState, PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture, PixelLifeEvent, PixelLifeState } from './types';
+import type { PixelCityMapState, PixelHomeState, PixelHomeTheme, PixelHomeViewMode, PixelAsset, PlacedFurniture, PixelLifeEvent, PixelLifeState } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { getOrCreateHomeState, PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
 import { ROOM_META } from './roomTemplates';
@@ -195,8 +195,17 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     setSelectedRoom(roomId); setViewMode('room');
   }, []);
 
+  const handleEnterCity = useCallback(() => {
+    setViewMode('city');
+  }, []);
+
   const handleRoomUpdate = useCallback(async () => {
     setHomeState(await getOrCreateHomeState(charId));
+  }, [charId]);
+
+  const handleUpdateHomeTheme = useCallback(async (theme: PixelHomeTheme) => {
+    setHomeState(prev => prev ? { ...prev, theme } : prev);
+    try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
   }, [charId]);
 
   // 导出预设
@@ -329,11 +338,8 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           <div className="absolute inset-0">
             <PixelHomeMap homeState={homeState} assets={assets}
               charSprite={pixelCharSprite || charAvatar} userName={userName} lifeState={lifeState} onEnterRoom={handleEnterRoom}
-              onEnterCity={() => setViewMode('city')}
-              onUpdateTheme={async theme => {
-                setHomeState(prev => prev ? { ...prev, theme } : prev);
-                try { await DB.saveAsset(`pixel_home_theme_${charId}`, JSON.stringify(theme)); } catch {}
-              }} />
+              onEnterCity={handleEnterCity}
+              onUpdateTheme={handleUpdateHomeTheme} />
             <PixelLifeLogOverlay events={lifeEvents} lifeState={lifeState} userName={userName} variant="map" city={pixelCity} />
           </div>
         )}

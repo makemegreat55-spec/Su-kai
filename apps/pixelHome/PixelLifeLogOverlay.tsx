@@ -204,4 +204,4 @@ const PixelLifeLogOverlay: React.FC<PixelLifeLogOverlayProps> = ({
   );
 };
 
-export default PixelLifeLogOverlay;
+export default React.memo(PixelLifeLogOverlay);
