@@ -57,9 +57,6 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
     return current || city.places.find(p => p.type === 'street') || city.places[0];
   }, [city, lifeState?.currentPlaceId]);
   const [selectedPlaceId, setSelectedPlaceId] = useState(initialPlace?.id);
-  const [walkStep, setWalkStep] = useState(0);
-  const [walkOffset, setWalkOffset] = useState({ x: 0, y: 0 });
-  const rngRef = useRef(0.37);
 
   const selectedPlace = city.places.find(place => place.id === selectedPlaceId) || initialPlace;
   const currentPlace = isCityPlaceId(lifeState?.currentPlaceId)
@@ -75,24 +72,9 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
     if (initialPlace?.id) setSelectedPlaceId(prev => prev || initialPlace.id);
   }, [initialPlace?.id]);
 
-  useEffect(() => {
-    if (!characterIsInCity) return;
-    const timer = window.setInterval(() => {
-      rngRef.current = (rngRef.current * 9301 + 49297) % 233280;
-      const r1 = rngRef.current / 233280;
-      rngRef.current = (rngRef.current * 9301 + 49297) % 233280;
-      const r2 = rngRef.current / 233280;
-      setWalkOffset({ x: (r1 - 0.5) * 0.8, y: (r2 - 0.5) * 0.45 });
-      setWalkStep(step => 1 - step);
-    }, 600);
-    return () => window.clearInterval(timer);
-  }, [characterIsInCity, currentPlace?.id]);
-
   const tileSize = city.tileSize;
   const mapW = city.width * tileSize;
   const mapH = city.height * tileSize;
-  const charX = currentPlace ? (currentPlace.x + currentPlace.w / 2 + walkOffset.x) * tileSize : 0;
-  const charY = currentPlace ? (currentPlace.y + currentPlace.h / 2 + walkOffset.y) * tileSize : 0;
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-[#2f5b4f]">
@@ -182,31 +164,12 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
             );
           })}
 
-          {charSprite && characterIsInCity && currentPlace && (
-            <div
-              className="pointer-events-none absolute z-40"
-              style={{
-                left: charX,
-                top: charY,
-                width: 28,
-                height: 28,
-                transform: `translate(-50%, -100%) rotate(${walkStep === 0 ? -3 : 3}deg)`,
-              }}
-            >
-              <img
-                src={charSprite}
-                alt=""
-                className="drop-shadow-md"
-                style={{ width: '100%', height: '100%', objectFit: 'contain', imageRendering: 'pixelated' as any }}
-                draggable={false}
-              />
-              {currentAction && (
-                <div className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-950/80 px-1.5 py-0.5 text-[7px] font-bold text-white">
-                  {currentAction}
-                </div>
-              )}
-            </div>
-          )}
+          <CityWalkingCharacter
+            charSprite={charSprite}
+            currentPlace={characterIsInCity ? currentPlace : null}
+            currentAction={currentAction}
+            tileSize={tileSize}
+          />
         </div>
       </div>
 
@@ -243,5 +206,65 @@ const PixelCityMap: React.FC<PixelCityMapProps> = ({ city, charSprite, lifeState
     </div>
   );
 };
+
+const CityWalkingCharacter: React.FC<{
+  charSprite?: string;
+  currentPlace: PixelCityPlace | null;
+  currentAction: string;
+  tileSize: number;
+}> = React.memo(({ charSprite, currentPlace, currentAction, tileSize }) => {
+  const [walkStep, setWalkStep] = useState(0);
+  const [walkOffset, setWalkOffset] = useState({ x: 0, y: 0 });
+  const rngRef = useRef(0.37);
+
+  useEffect(() => {
+    setWalkOffset({ x: 0, y: 0 });
+    setWalkStep(0);
+  }, [currentPlace?.id]);
+
+  useEffect(() => {
+    if (!currentPlace) return;
+    const timer = window.setInterval(() => {
+      rngRef.current = (rngRef.current * 9301 + 49297) % 233280;
+      const r1 = rngRef.current / 233280;
+      rngRef.current = (rngRef.current * 9301 + 49297) % 233280;
+      const r2 = rngRef.current / 233280;
+      setWalkOffset({ x: (r1 - 0.5) * 0.8, y: (r2 - 0.5) * 0.45 });
+      setWalkStep(step => 1 - step);
+    }, 600);
+    return () => window.clearInterval(timer);
+  }, [currentPlace]);
+
+  if (!charSprite || !currentPlace) return null;
+
+  const charX = (currentPlace.x + currentPlace.w / 2 + walkOffset.x) * tileSize;
+  const charY = (currentPlace.y + currentPlace.h / 2 + walkOffset.y) * tileSize;
+
+  return (
+    <div
+      className="pointer-events-none absolute z-40"
+      style={{
+        left: charX,
+        top: charY,
+        width: 28,
+        height: 28,
+        transform: `translate(-50%, -100%) rotate(${walkStep === 0 ? -3 : 3}deg)`,
+      }}
+    >
+      <img
+        src={charSprite}
+        alt=""
+        className="drop-shadow-md"
+        style={{ width: '100%', height: '100%', objectFit: 'contain', imageRendering: 'pixelated' as any }}
+        draggable={false}
+      />
+      {currentAction && (
+        <div className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-950/80 px-1.5 py-0.5 text-[7px] font-bold text-white">
+          {currentAction}
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default React.memo(PixelCityMap);

@@ -82,74 +82,11 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
 
-  // 角色小人（像素步行）
-  const [charPos, setCharPos] = useState({ roomIdx: 3, x: 50, y: 60 });
-  const [charFlip, setCharFlip] = useState(false);
-  const [charWalking, setCharWalking] = useState(false);
-  const [charStep, setCharStep] = useState(0);
-  const charTargetRef = useRef({ x: 50, y: 60 });
-  const charPosRef = useRef({ x: 50, y: 60 });
   const activeLifeRoomIdx = lifeState?.currentPlaceId
     ? FLOOR_PLAN.findIndex(room => room.roomId === lifeState.currentPlaceId)
     : -1;
   const isLifeInCity = Boolean(lifeState?.currentPlaceId && activeLifeRoomIdx < 0);
   const currentActionLabel = lifeState ? getPixelLifeActionLabel(lifeState.currentActionType) : '';
-
-  useEffect(() => {
-    if (activeLifeRoomIdx < 0) return;
-    charPosRef.current = { x: 50, y: 60 };
-    charTargetRef.current = { x: 50, y: 60 };
-    setCharPos({ roomIdx: activeLifeRoomIdx, x: 50, y: 60 });
-    setCharWalking(false);
-  }, [activeLifeRoomIdx]);
-
-  useEffect(() => {
-    const pickTarget = () => {
-      const cur = charPosRef.current;
-      charTargetRef.current = {
-        x: Math.max(20, Math.min(80, cur.x + (Math.random() - 0.5) * 30)),
-        y: Math.max(40, Math.min(80, cur.y + (Math.random() - 0.5) * 20)),
-      };
-    };
-    pickTarget();
-
-    const stepTimer = setInterval(() => {
-      const cur = charPosRef.current;
-      const tgt = charTargetRef.current;
-      const dx = tgt.x - cur.x;
-      const dy = tgt.y - cur.y;
-      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) { setCharWalking(false); return; }
-      let nx = cur.x, ny = cur.y;
-      if (Math.abs(dx) >= Math.abs(dy)) {
-        nx += dx > 0 ? 8 : -8;
-        setCharFlip(dx < 0);
-      } else {
-        ny += dy > 0 ? 8 : -8;
-      }
-      nx = Math.max(15, Math.min(85, nx));
-      ny = Math.max(35, Math.min(85, ny));
-      charPosRef.current = { x: nx, y: ny };
-      setCharPos(prev => ({ ...prev, x: nx, y: ny }));
-      setCharWalking(true);
-      setCharStep(s => 1 - s);
-    }, 600);
-
-    const targetTimer = setInterval(pickTarget, 5000 + Math.random() * 4000);
-
-    // 每隔 12~20 秒有概率换个房间；避免永远只待在客厅
-    const roomSwitchTimer = setInterval(() => {
-      if (activeLifeRoomIdx >= 0) return;
-      if (isLifeInCity) return;
-      if (Math.random() < 0.55) {
-        const nextIdx = Math.floor(Math.random() * FLOOR_PLAN.length);
-        charPosRef.current = { x: 50, y: 60 };
-        charTargetRef.current = { x: 50, y: 60 };
-        setCharPos({ roomIdx: nextIdx, x: 50, y: 60 });
-      }
-    }, 12000 + Math.random() * 8000);
-
-    return () => { clearInterval(stepTimer); clearInterval(targetTimer); clearInterval(roomSwitchTimer); };
-  }, [activeLifeRoomIdx, isLifeInCity]);
 
   // wheel
   useEffect(() => {
@@ -305,7 +242,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
         transformOrigin: 'center center',
       }}>
         <div className="relative" style={{ width: totalW, height: totalH }}>
-          {FLOOR_PLAN.map(({ roomId, x, y, w, h }, idx) => {
+          {FLOOR_PLAN.map(({ roomId, x, y, w, h }) => {
             const meta = ROOM_META[roomId];
             const style = ROOM_STYLE[roomId];
             const roomLayout = homeState.rooms.find(r => r.roomId === roomId);
@@ -455,38 +392,6 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
                 })}
                 </div>
 
-                {/* 角色小人（像素步行） */}
-                {!isLifeInCity && idx === charPos.roomIdx && charSprite && (
-                  <div className="absolute z-40 pointer-events-none"
-                    style={{
-                      left: `${charPos.x}%`, top: `${charPos.y}%`,
-                      width: 24,
-                      height: 24,
-                      transform: `translate(-50%, -100%) scaleX(${charFlip ? -1 : 1})`,
-                    }}>
-                    {currentActionLabel && (
-                      <div className="absolute left-1/2 -top-6 rounded-full bg-slate-950/75 px-1.5 py-0.5 text-[7px] font-bold text-white/90 shadow-sm whitespace-nowrap"
-                        style={{ transform: `translateX(-50%) scaleX(${charFlip ? -1 : 1})` }}>
-                        {currentActionLabel}
-                      </div>
-                    )}
-                    <img src={charSprite} className="drop-shadow-sm"
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'contain',
-                        imageRendering: 'pixelated',
-                        transform: charWalking
-                          ? `rotate(${charStep === 0 ? -4 : 4}deg) translateY(${charStep === 0 ? -1 : 0}px)`
-                          : 'none',
-                      }} draggable={false} />
-                    <div className="mx-auto rounded-full bg-black/20" style={{
-                      width: charWalking ? 10 : 12, height: 2,
-                    }} />
-                  </div>
-                )}
-
                 {/* 房间名 */}
                 <div className="absolute inset-x-0 bottom-1 flex justify-center pointer-events-none z-50">
                   <span className="text-[7px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white/90 whitespace-nowrap">
@@ -504,11 +409,128 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
           <Corridor x={4} y1={9}  y2={10} border={WALL_BORDER} step={CORRIDOR_STEP} />
           <Corridor x={4} y1={16} y2={17} border={WALL_BORDER} step={CORRIDOR_STEP} />
           <Corridor x={4} y1={21} y2={22} border={WALL_BORDER} step={CORRIDOR_STEP} />
+          <MapWalkingCharacter
+            charSprite={charSprite}
+            activeLifeRoomIdx={activeLifeRoomIdx}
+            isLifeInCity={isLifeInCity}
+            currentActionLabel={currentActionLabel}
+          />
         </div>
       </div>
     </div>
   );
 };
+
+const MapWalkingCharacter: React.FC<{
+  charSprite?: string;
+  activeLifeRoomIdx: number;
+  isLifeInCity: boolean;
+  currentActionLabel: string;
+}> = React.memo(({ charSprite, activeLifeRoomIdx, isLifeInCity, currentActionLabel }) => {
+  const [charPos, setCharPos] = useState({ roomIdx: activeLifeRoomIdx >= 0 ? activeLifeRoomIdx : 3, x: 50, y: 60 });
+  const [charFlip, setCharFlip] = useState(false);
+  const [charWalking, setCharWalking] = useState(false);
+  const [charStep, setCharStep] = useState(0);
+  const charTargetRef = useRef({ x: 50, y: 60 });
+  const charPosRef = useRef({ x: 50, y: 60 });
+
+  useEffect(() => {
+    if (activeLifeRoomIdx < 0) return;
+    charPosRef.current = { x: 50, y: 60 };
+    charTargetRef.current = { x: 50, y: 60 };
+    setCharPos({ roomIdx: activeLifeRoomIdx, x: 50, y: 60 });
+    setCharWalking(false);
+  }, [activeLifeRoomIdx]);
+
+  useEffect(() => {
+    const pickTarget = () => {
+      const cur = charPosRef.current;
+      charTargetRef.current = {
+        x: Math.max(20, Math.min(80, cur.x + (Math.random() - 0.5) * 30)),
+        y: Math.max(40, Math.min(80, cur.y + (Math.random() - 0.5) * 20)),
+      };
+    };
+    pickTarget();
+
+    const stepTimer = setInterval(() => {
+      const cur = charPosRef.current;
+      const tgt = charTargetRef.current;
+      const dx = tgt.x - cur.x;
+      const dy = tgt.y - cur.y;
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) { setCharWalking(false); return; }
+      let nx = cur.x, ny = cur.y;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        nx += dx > 0 ? 8 : -8;
+        setCharFlip(dx < 0);
+      } else {
+        ny += dy > 0 ? 8 : -8;
+      }
+      nx = Math.max(15, Math.min(85, nx));
+      ny = Math.max(35, Math.min(85, ny));
+      charPosRef.current = { x: nx, y: ny };
+      setCharPos(prev => ({ ...prev, x: nx, y: ny }));
+      setCharWalking(true);
+      setCharStep(s => 1 - s);
+    }, 600);
+
+    const targetTimer = setInterval(pickTarget, 5000 + Math.random() * 4000);
+
+    const roomSwitchTimer = setInterval(() => {
+      if (activeLifeRoomIdx >= 0) return;
+      if (isLifeInCity) return;
+      if (Math.random() < 0.55) {
+        const nextIdx = Math.floor(Math.random() * FLOOR_PLAN.length);
+        charPosRef.current = { x: 50, y: 60 };
+        charTargetRef.current = { x: 50, y: 60 };
+        setCharPos({ roomIdx: nextIdx, x: 50, y: 60 });
+      }
+    }, 12000 + Math.random() * 8000);
+
+    return () => { clearInterval(stepTimer); clearInterval(targetTimer); clearInterval(roomSwitchTimer); };
+  }, [activeLifeRoomIdx, isLifeInCity]);
+
+  if (!charSprite || isLifeInCity) return null;
+
+  const room = FLOOR_PLAN[charPos.roomIdx] || FLOOR_PLAN[3];
+  const px = room.x * CELL + WALL_THICK + 10;
+  const py = room.y * CELL + WALL_THICK + 10;
+  const pw = room.w * CELL;
+  const ph = room.h * CELL;
+  const left = px + (charPos.x / 100) * pw;
+  const top = py + (charPos.y / 100) * ph;
+
+  return (
+    <div className="absolute z-40 pointer-events-none"
+      style={{
+        left,
+        top,
+        width: 24,
+        height: 24,
+        transform: `translate(-50%, -100%) scaleX(${charFlip ? -1 : 1})`,
+      }}>
+      {currentActionLabel && (
+        <div className="absolute left-1/2 -top-6 rounded-full bg-slate-950/75 px-1.5 py-0.5 text-[7px] font-bold text-white/90 shadow-sm whitespace-nowrap"
+          style={{ transform: `translateX(-50%) scaleX(${charFlip ? -1 : 1})` }}>
+          {currentActionLabel}
+        </div>
+      )}
+      <img src={charSprite} className="drop-shadow-sm"
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          imageRendering: 'pixelated',
+          transform: charWalking
+            ? `rotate(${charStep === 0 ? -4 : 4}deg) translateY(${charStep === 0 ? -1 : 0}px)`
+            : 'none',
+        }} draggable={false} />
+      <div className="mx-auto rounded-full bg-black/20" style={{
+        width: charWalking ? 10 : 12, height: 2,
+      }} />
+    </div>
+  );
+});
 
 const FloorTexture: React.FC<{ type: string; base: string; alt: string }> = ({ type, base, alt }) => {
   if (type === 'wood') return <div className="absolute inset-0" style={{

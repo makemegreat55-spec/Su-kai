@@ -799,7 +799,7 @@ const PixelRoomEditor: React.FC<Props> = ({
                     if (touchStateRef.current.active) return;
                     handlePointerDown(e, f.slotId);
                   }}>
-                  {isSelected && <div className="absolute -inset-1 rounded border-2 animate-pulse" style={{ borderColor: meta.color, boxShadow: `0 0 8px ${meta.color}80` }} />}
+                  {isSelected && <div className="absolute -inset-1 rounded border-2" style={{ borderColor: meta.color, boxShadow: `0 0 8px ${meta.color}80` }} />}
                   <img src={imgSrc} className="pointer-events-none" style={{
                     display: 'block',            // 去掉 inline baseline gap
                     width: '100%',
